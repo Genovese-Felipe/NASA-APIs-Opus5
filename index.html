@@ -37,7 +37,9 @@
     a { color: var(--cyan); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    #space-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #02030a; }
+    #space-canvas, #fallback-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #02030a; }
+    #fallback-canvas { display: none; z-index: 0; pointer-events: none; }
+    body.fallback-active #fallback-canvas { display: block; }
     .vignette, .scanlines, .grain { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
     .vignette { background: radial-gradient(ellipse at center, transparent 32%, rgba(1, 3, 8, .22) 62%, rgba(0, 0, 0, .84) 100%); }
     .scanlines { opacity: .09; background: repeating-linear-gradient(180deg, transparent 0, transparent 3px, rgba(255,255,255,.07) 4px); mix-blend-mode: screen; }
@@ -213,6 +215,7 @@
 </head>
 <body>
   <canvas id="space-canvas" aria-label="Procedural NASA data visualization"></canvas>
+  <canvas id="fallback-canvas" aria-hidden="true"></canvas>
   <div class="vignette"></div>
   <div class="scanlines"></div>
   <div class="grain"></div>
@@ -320,6 +323,11 @@
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
       const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const storage = {
+        get(key, fallback = null) { try { return typeof localStorage === 'undefined' ? fallback : (localStorage.getItem(key) ?? fallback); } catch (_) { return fallback; } },
+        set(key, value) { try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); } catch (_) { /* storage is optional */ } }
+      };
+      const cloneData = (value) => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
       const todayISO = () => new Date().toISOString().slice(0, 10);
       const daysAgoISO = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
       const formatNumber = (value) => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
@@ -369,11 +377,11 @@
       ];
 
       const state = {
-        apiKey: localStorage.getItem('orbital-nasa-key') || 'DEMO_KEY',
-        language: localStorage.getItem('orbital-language') || 'en',
+        apiKey: storage.get('orbital-nasa-key', 'DEMO_KEY'),
+        language: storage.get('orbital-language', 'en'),
         scene: new URLSearchParams(location.search).get('scene') || 'deep',
-        selectedObject: localStorage.getItem('orbital-object') || 'earth',
-        quality: localStorage.getItem('orbital-quality') || 'medium',
+        selectedObject: storage.get('orbital-object', 'earth'),
+        quality: storage.get('orbital-quality', 'medium'),
         orbit: true,
         orbitSpeed: .65,
         timeScale: 1,
@@ -385,7 +393,7 @@
         dragging: false,
         lastPointer: null,
         audioOn: false,
-        data: structuredClone(FALLBACK),
+        data: cloneData(FALLBACK),
         apiStatus: Object.fromEntries(API_CATALOG.map(api => [api.id, { status: 'demo', message: 'demonstration dataset' }])),
         lastSync: null,
         recording: null,
@@ -435,7 +443,7 @@
       function cacheKey() { return 'orbital-nasa-cache-v1'; }
       function loadCache() {
         try {
-          const cached = JSON.parse(localStorage.getItem(cacheKey()) || 'null');
+          const cached = JSON.parse(storage.get(cacheKey(), 'null') || 'null');
           if (cached?.data && Date.now() - cached.savedAt < 8 * 3600000) {
             state.data = { ...state.data, ...cached.data };
             for (const [id, value] of Object.entries(cached.status || {})) state.apiStatus[id] = { ...value, status: value.status === 'live' ? 'live' : 'demo' };
@@ -446,7 +454,7 @@
         return false;
       }
       function saveCache() {
-        try { localStorage.setItem(cacheKey(), JSON.stringify({ savedAt: Date.now(), data: state.data, status: state.apiStatus })); } catch (_) { /* private browsing may deny storage */ }
+        storage.set(cacheKey(), JSON.stringify({ savedAt: Date.now(), data: state.data, status: state.apiStatus }));
       }
 
       const NASA = {
@@ -535,7 +543,7 @@
       function showEvent(index) { const event = normalizeEvents()[index]; if (!event) return; const category = eventCategory(event); const link = safeURL(event.link || event.sources?.[0]?.url); openModal(event.title || 'Natural event', `<div class="modal-meta"><span class="meta-chip">EONET v3</span><span class="meta-chip">${escapeHTML(category)}</span><span class="meta-chip">${event.closed ? 'closed' : 'open'}</span></div><p>${escapeHTML(event.description || 'NASA EONET did not return a longer description for this event. The event remains represented by its title, category, geometry, and provenance links.')}</p><p><a href="${escapeHTML(link)}" target="_blank" rel="noreferrer">Open source record ↗</a></p>`); }
 
       function sceneIndex() { return { deep:0, earth:1, solar:2, archive:3 }[state.scene] ?? 0; }
-      function setScene(scene) { state.scene = scene; $$('.scene-pill').forEach((button) => button.classList.toggle('active', button.dataset.scene === scene)); $('#scene-caption').textContent = sceneNames[scene] || sceneNames.deep; $('#scene-subcaption').textContent = sceneSubtitles[scene] || sceneSubtitles.deep; $('#object-select').value = scene === 'earth' ? 'earth' : scene === 'solar' ? 'sun' : scene === 'archive' ? 'moon' : state.selectedObject; history.replaceState(null, '', `${location.pathname}?scene=${encodeURIComponent(scene)}`); }
+      function setScene(scene) { state.scene = scene; $$('.scene-pill').forEach((button) => button.classList.toggle('active', button.dataset.scene === scene)); $('#scene-caption').textContent = sceneNames[scene] || sceneNames.deep; $('#scene-subcaption').textContent = sceneSubtitles[scene] || sceneSubtitles.deep; $('#object-select').value = scene === 'earth' ? 'earth' : scene === 'solar' ? 'sun' : scene === 'archive' ? 'moon' : state.selectedObject; try { history.replaceState(null, '', `${location.pathname}?scene=${encodeURIComponent(scene)}`); } catch (_) { /* file:// and embedded artifacts can restrict history */ } }
       function resetView() { state.yaw = .34; state.pitch = .12; state.zoom = 1; toast('Viewpoint reset', 'Camera transform returned to mission baseline.'); }
       function toggleOrbit() { state.orbit = !state.orbit; $('#orbit-toggle').textContent = state.orbit ? 'ORBIT ON' : 'ORBIT OFF'; $$('.dock-button')[0].classList.toggle('active', state.orbit); toast(state.orbit ? 'Orbit mode enabled' : 'Orbit mode paused', state.orbit ? 'The camera is now tracing a gentle survey path.' : 'Manual navigation has priority.'); }
 
@@ -543,23 +551,25 @@
       function downloadData() { const payload = { generatedAt: new Date().toISOString(), app: 'ORBITAL / NASA API Observatory', apiKeyMode: state.apiKey === 'DEMO_KEY' ? 'DEMO_KEY' : 'personal-key-redacted', scene: state.scene, quality: state.quality, apiStatus: state.apiStatus, data: state.data }; downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' }), `orbital-nasa-observation-${todayISO()}.json`); toast('Observation exported', 'The data snapshot contains provenance status and redacts personal API credentials.'); }
       function capture() { const selected = $('#export-select').value || 'viewport'; const format = $('#format-select').value || 'png'; renderExport(selected, format); }
       function renderExport(size, format) {
-        const original = { width: canvas.width, height: canvas.height, cssWidth: canvas.style.width, cssHeight: canvas.style.height };
+        const surface = ctx2d?.canvas || canvas;
+        const original = { width: surface.width, height: surface.height, cssWidth: surface.style.width, cssHeight: surface.style.height };
         let width = canvas.clientWidth || innerWidth, height = canvas.clientHeight || innerHeight;
         if (size === '4k') { width = 3840; height = 2160; } if (size === '8k') { width = 7680; height = 4320; }
         const maxPixels = size === '8k' ? 7680 * 4320 : size === '4k' ? 3840 * 2160 : width * height * 4; const scale = Math.min(1, Math.sqrt(maxPixels / (width * height))); width = Math.max(640, Math.floor(width * scale)); height = Math.max(360, Math.floor(height * scale));
-        canvas.width = width; canvas.height = height; canvas.style.width = `${width}px`; canvas.style.height = `${height}px`; renderFrame(performance.now());
-        const mime = `image/${format}`; canvas.toBlob((blob) => { if (blob) downloadBlob(blob, `orbital-${state.scene}-${width}x${height}.${format === 'jpeg' ? 'jpg' : format}`); canvas.style.width = original.cssWidth; canvas.style.height = original.cssHeight; resizeCanvas(); toast('Frame captured', `${format.toUpperCase()} · ${width}×${height}`); }, mime, .94);
+        surface.width = width; surface.height = height; surface.style.width = `${width}px`; surface.style.height = `${height}px`; renderFrame(performance.now());
+        const mime = `image/${format}`; surface.toBlob((blob) => { if (blob) downloadBlob(blob, `orbital-${state.scene}-${width}x${height}.${format === 'jpeg' ? 'jpg' : format}`); surface.style.width = original.cssWidth; surface.style.height = original.cssHeight; surface.width = original.width; surface.height = original.height; resizeCanvas(); toast('Frame captured', `${format.toUpperCase()} · ${width}×${height}`); }, mime, .94);
       }
       function recorderMime() { return ['video/mp4;codecs=h264', 'video/webm;codecs=vp9', 'video/webm'].find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || ''; }
-      function record() { if (state.recording) { state.recording.stop(); return; } if (!canvas.captureStream || !window.MediaRecorder) { toast('Recording unavailable', 'This browser does not expose MediaRecorder for canvas capture.', 'orange'); return; } const mime = recorderMime(); if (!mime) { toast('Recording unavailable', 'No supported browser recording codec was found.', 'orange'); return; } const chunks = []; const stream = canvas.captureStream(30); const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 }); state.recording = recorder; recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data); recorder.onstop = () => { const blob = new Blob(chunks, { type: mime }); const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm'; downloadBlob(blob, `orbital-${state.scene}-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`); state.recording = null; const label = $('.dock-button[data-action="record"] .dock-label'); if (label) label.textContent = t('dock.record'); toast('Recording saved', `${ext.toUpperCase()} · ${Math.round(blob.size / 1024)} KB`); }; recorder.start(); toast('Recording started', `30 fps canvas capture · ${mime.split(';')[0].toUpperCase()}`); }
+      function record() { const surface = ctx2d?.canvas || canvas; if (state.recording) { state.recording.stop(); return; } if (!surface.captureStream || !window.MediaRecorder) { toast('Recording unavailable', 'This browser does not expose MediaRecorder for canvas capture.', 'orange'); return; } const mime = recorderMime(); if (!mime) { toast('Recording unavailable', 'No supported browser recording codec was found.', 'orange'); return; } const chunks = []; const stream = surface.captureStream(30); const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 }); state.recording = recorder; recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data); recorder.onstop = () => { const blob = new Blob(chunks, { type: mime }); const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm'; downloadBlob(blob, `orbital-${state.scene}-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`); state.recording = null; const label = $('.dock-button[data-action="record"] .dock-label'); if (label) label.textContent = t('dock.record'); toast('Recording saved', `${ext.toUpperCase()} · ${Math.round(blob.size / 1024)} KB`); }; recorder.start(); toast('Recording started', `30 fps canvas capture · ${mime.split(';')[0].toUpperCase()}`); }
 
       function initAudio() { if (state.audioOn) return; const AudioContext = window.AudioContext || window.webkitAudioContext; if (!AudioContext) { toast('Audio unavailable', 'Web Audio is not supported in this browser.', 'orange'); return; } const ctx = new AudioContext(); const master = ctx.createGain(); master.gain.value = .018; master.connect(ctx.destination); const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = 68; const lfo = ctx.createOscillator(); const lfoGain = ctx.createGain(); lfo.frequency.value = .07; lfoGain.gain.value = 12; lfo.connect(lfoGain); lfoGain.connect(osc.frequency); osc.connect(master); osc.start(); lfo.start(); state.audio = { ctx, master, osc, lfo }; state.audioOn = true; $('[data-action="toggle-sound"]').classList.add('active'); toast('Ambient sonification on', 'A low procedural tone follows the observatory field.'); }
       function stopAudio() { if (!state.audioOn) return; state.audio?.osc.stop(); state.audio?.lfo.stop(); state.audio?.ctx.close(); state.audio = null; state.audioOn = false; $('[data-action="toggle-sound"]').classList.remove('active'); toast('Ambient sonification off', 'The visual field continues independently.'); }
       function toggleAudio() { state.audioOn ? stopAudio() : initAudio(); }
-      function saveKey() { const value = $('#api-key-input').value.trim() || 'DEMO_KEY'; state.apiKey = value; localStorage.setItem('orbital-nasa-key', value); closeDrawer(); NASA.refresh(); toast('NASA key updated', value === 'DEMO_KEY' ? 'The public demonstration key is active.' : 'The key stays in this browser and is never exported.'); }
+      function saveKey() { const value = $('#api-key-input').value.trim() || 'DEMO_KEY'; state.apiKey = value; storage.set('orbital-nasa-key', value); closeDrawer(); NASA.refresh(); toast('NASA key updated', value === 'DEMO_KEY' ? 'The public demonstration key is active.' : 'The key stays in this browser and is never exported.'); }
 
       // ---------- Procedural renderer ----------
       const canvas = $('#space-canvas');
+      const fallbackCanvas = $('#fallback-canvas');
       let gl = null, ctx2d = null, program = null, uniform = null, raf = 0;
       const vertexSource = `#version 300 es\n in vec2 a_position; out vec2 v_uv; void main(){ v_uv = a_position * .5 + .5; gl_Position = vec4(a_position,0.,1.); }`;
       const fragmentSource = `#version 300 es
@@ -618,17 +628,18 @@
           outColor=vec4(color,1.);
         }`;
       function shader(type, source) { const s = gl.createShader(type); gl.shaderSource(s, source); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+      function activateFallback(reason) { gl = null; program = null; uniform = null; ctx2d = fallbackCanvas?.getContext('2d', { alpha: false }) || null; document.body.classList.add('fallback-active'); state.renderer = 'Canvas 2D / resilient fallback'; if (!ctx2d) state.renderer = 'Static field / browser fallback'; toast('WebGL2 fallback', `${reason || 'WebGL2 unavailable'}. The visual field switched to a resilient fallback.`, 'orange'); }
       function initRenderer() {
         try {
           gl = canvas.getContext('webgl2', { antialias:false, alpha:false, preserveDrawingBuffer:true, powerPreference:'high-performance' });
           if (!gl) throw new Error('WebGL2 unavailable');
           program = gl.createProgram(); gl.attachShader(program, shader(gl.VERTEX_SHADER, vertexSource)); gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fragmentSource)); gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
           const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW); const loc = gl.getAttribLocation(program,'a_position'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); uniform = Object.fromEntries(['u_resolution','u_time','u_yaw','u_pitch','u_zoom','u_scene','u_danger','u_seed','u_pointerX','u_pointerY'].map((name) => [name, gl.getUniformLocation(program,name)])); state.renderer = 'WebGL2 / procedural ray trace';
-        } catch (error) { gl = null; ctx2d = canvas.getContext('2d'); state.renderer = 'Canvas 2D / resilient fallback'; toast('WebGL2 fallback', 'The visual field switched to Canvas 2D; navigation and exports remain available.', 'orange'); }
+        } catch (error) { activateFallback(error?.message || 'WebGL2 initialization failed'); }
         $('#renderer-readout').textContent = state.renderer;
       }
-      function resizeCanvas() { const quality = QUALITY[state.quality] || QUALITY.medium; const dpr = Math.min(devicePixelRatio || 1, quality.maxDpr) * quality.scale; const width = Math.max(320, Math.floor(canvas.clientWidth * dpr)); const height = Math.max(240, Math.floor(canvas.clientHeight * dpr)); if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; if (gl) gl.viewport(0,0,width,height); } }
-      function fallbackFrame(time) { const w=canvas.width,h=canvas.height; const c=ctx2d; c.clearRect(0,0,w,h); const g=c.createRadialGradient(w*.53,h*.47,0,w*.53,h*.47,Math.max(w,h)*.72); g.addColorStop(0,'#132a5a');g.addColorStop(.35,'#07152f');g.addColorStop(1,'#02040b');c.fillStyle=g;c.fillRect(0,0,w,h); const seed=7; for(let i=0;i<260;i++){const x=(Math.sin(i*97.13+seed)*.5+.5)*w,y=(Math.sin(i*17.71+seed*3)*.5+.5)*h,r=(i%7===0?1.4:.55)*(w/1200);c.fillStyle=`rgba(${140+i%90},${190+i%60},255,${.25+(i%5)/10})`;c.fillRect(x,y,r,r);} const cx=w*.52+Math.sin(state.yaw)*w*.04,cy=h*.5+Math.sin(state.pitch)*h*.05,rad=Math.min(w,h)*.2; const planet=c.createRadialGradient(cx-rad*.35,cy-rad*.45,rad*.04,cx,cy,rad);planet.addColorStop(0,'#bdf5ff');planet.addColorStop(.22,state.scene==='solar'?'#ffcf67':'#2384bc');planet.addColorStop(.72,state.scene==='archive'?'#606476':'#102d68');planet.addColorStop(1,'#02050d');c.fillStyle=planet;c.beginPath();c.arc(cx,cy,rad,0,Math.PI*2);c.fill();c.save();c.translate(cx,cy);c.rotate(-.25);c.strokeStyle='rgba(106,231,255,.5)';c.lineWidth=Math.max(1,w/1000);c.beginPath();c.ellipse(0,0,rad*1.65,rad*.35,0,0,Math.PI*2);c.stroke();c.restore(); }
+      function resizeCanvas() { const quality = QUALITY[state.quality] || QUALITY.medium; const dpr = Math.min(devicePixelRatio || 1, quality.maxDpr) * quality.scale; const width = Math.max(320, Math.floor(canvas.clientWidth * dpr)); const height = Math.max(240, Math.floor(canvas.clientHeight * dpr)); for (const surface of [canvas, fallbackCanvas]) { if (surface && (surface.width !== width || surface.height !== height)) { surface.width = width; surface.height = height; } } if (gl) gl.viewport(0,0,width,height); }
+      function fallbackFrame(time) { if (!ctx2d) return; const surface=ctx2d.canvas; const w=surface.width,h=surface.height; const c=ctx2d; c.clearRect(0,0,w,h); const g=c.createRadialGradient(w*.53,h*.47,0,w*.53,h*.47,Math.max(w,h)*.72); g.addColorStop(0,'#132a5a');g.addColorStop(.35,'#07152f');g.addColorStop(1,'#02040b');c.fillStyle=g;c.fillRect(0,0,w,h); const seed=7; for(let i=0;i<260;i++){const x=(Math.sin(i*97.13+seed)*.5+.5)*w,y=(Math.sin(i*17.71+seed*3)*.5+.5)*h,r=(i%7===0?1.4:.55)*(w/1200);c.fillStyle=`rgba(${140+i%90},${190+i%60},255,${.25+(i%5)/10})`;c.fillRect(x,y,r,r);} const cx=w*.52+Math.sin(state.yaw)*w*.04,cy=h*.5+Math.sin(state.pitch)*h*.05,rad=Math.min(w,h)*.2; const planet=c.createRadialGradient(cx-rad*.35,cy-rad*.45,rad*.04,cx,cy,rad);planet.addColorStop(0,'#bdf5ff');planet.addColorStop(.22,state.scene==='solar'?'#ffcf67':'#2384bc');planet.addColorStop(.72,state.scene==='archive'?'#606476':'#102d68');planet.addColorStop(1,'#02050d');c.fillStyle=planet;c.beginPath();c.arc(cx,cy,rad,0,Math.PI*2);c.fill();c.save();c.translate(cx,cy);c.rotate(-.25);c.strokeStyle='rgba(106,231,255,.5)';c.lineWidth=Math.max(1,w/1000);c.beginPath();c.ellipse(0,0,rad*1.65,rad*.35,0,0,Math.PI*2);c.stroke();c.restore(); }
       function renderFrame(timestamp) { const elapsed=(timestamp-state.startedAt)/1000; if(gl){ gl.useProgram(program); gl.viewport(0,0,canvas.width,canvas.height); gl.uniform2f(uniform.u_resolution,canvas.width,canvas.height); gl.uniform1f(uniform.u_time,elapsed*state.timeScale); gl.uniform1f(uniform.u_yaw,state.yaw); gl.uniform1f(uniform.u_pitch,state.pitch); gl.uniform1f(uniform.u_zoom,state.zoom); gl.uniform1f(uniform.u_scene,sceneIndex()); gl.uniform1f(uniform.u_danger,flatNEOs().filter(n=>n.is_potentially_hazardous_asteroid).length); gl.uniform1f(uniform.u_seed,flatNEOs().length*1.73+normalizeEvents().length); gl.uniform1f(uniform.u_pointerX,state.pointerX); gl.uniform1f(uniform.u_pointerY,state.pointerY); gl.drawArrays(gl.TRIANGLE_STRIP,0,4); } else if(ctx2d) fallbackFrame(elapsed); if(state.orbit && !state.reducedMotion) state.yaw += .00028 * state.orbitSpeed * state.timeScale; raf=requestAnimationFrame(renderFrame); }
 
       function pointerDown(event) { state.dragging=true; state.lastPointer={x:event.clientX,y:event.clientY}; canvas.setPointerCapture?.(event.pointerId); }
@@ -638,9 +649,9 @@
       function keydown(event) { if (event.target.matches('input,select,textarea')) return; const key=event.key.toLowerCase(); if(key===' ') { event.preventDefault(); toggleOrbit(); } else if(key==='m') toggleAudio(); else if(key==='r') resetView(); else if(key==='+' || key==='=') state.zoom=clamp(state.zoom+.1,.68,2.6); else if(key==='-' || key==='_') state.zoom=clamp(state.zoom-.1,.68,2.6); else if(key==='arrowleft'||key==='a') state.yaw-=.07; else if(key==='arrowright'||key==='d') state.yaw+=.07; else if(key==='arrowup'||key==='w') state.pitch=clamp(state.pitch-.07,-1.2,1.2); else if(key==='arrowdown'||key==='s') state.pitch=clamp(state.pitch+.07,-1.2,1.2); else if(['1','2','3','4'].includes(key)) setScene(['deep','earth','solar','archive'][Number(key)-1]); }
 
       function bindUI() {
-        $('#language-select').addEventListener('change', (event) => { state.language=event.target.value; localStorage.setItem('orbital-language',state.language); applyLanguage(); });
+        $('#language-select').addEventListener('change', (event) => { state.language=event.target.value; storage.set('orbital-language',state.language); applyLanguage(); });
         $('#quality-select').value=state.quality; $('#api-key-input').value=state.apiKey === 'DEMO_KEY' ? '' : state.apiKey; $('#object-select').value=state.selectedObject;
-        $('#orbit-speed').addEventListener('input',(event)=>state.orbitSpeed=Number(event.target.value)); $('#time-scale').addEventListener('input',(event)=>state.timeScale=Number(event.target.value)); $('#quality-select').addEventListener('change',(event)=>{state.quality=event.target.value;localStorage.setItem('orbital-quality',state.quality);resizeCanvas();}); $('#object-select').addEventListener('change',(event)=>{state.selectedObject=event.target.value;localStorage.setItem('orbital-object',state.selectedObject);const map={earth:'earth',sun:'solar',moon:'archive',mars:'deep',deep:'deep'};setScene(map[state.selectedObject]||'deep');});
+        $('#orbit-speed').addEventListener('input',(event)=>state.orbitSpeed=Number(event.target.value)); $('#time-scale').addEventListener('input',(event)=>state.timeScale=Number(event.target.value)); $('#quality-select').addEventListener('change',(event)=>{state.quality=event.target.value;storage.set('orbital-quality',state.quality);resizeCanvas();}); $('#object-select').addEventListener('change',(event)=>{state.selectedObject=event.target.value;storage.set('orbital-object',state.selectedObject);const map={earth:'earth',sun:'solar',moon:'archive',mars:'deep',deep:'deep'};setScene(map[state.selectedObject]||'deep');});
         document.addEventListener('click',(event)=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action){({refresh:NASA.refresh,'open-guide':openGuide,'open-settings':openDrawer,'close-drawer':closeDrawer,'close-modal':closeModal,'toggle-sound':toggleAudio,'toggle-orbit':toggleOrbit,'reset-view':resetView,'capture':capture,'record':record,'download-data':downloadData,'open-apis':openDrawer,'save-key':saveKey}[action]||(()=>{}))();} const scene=event.target.closest('[data-scene]')?.dataset.scene;if(scene)setScene(scene);const item=event.target.closest('[data-event-index]');if(item)showEvent(Number(item.dataset.eventIndex));});
         $('#modal-wrap').addEventListener('click',(event)=>{if(event.target.id==='modal-wrap')closeModal();}); $('#drawer-backdrop').addEventListener('click',(event)=>{if(event.target.id==='drawer-backdrop')closeDrawer();});
         canvas.addEventListener('pointerdown',pointerDown); canvas.addEventListener('pointermove',pointerMove); canvas.addEventListener('pointerup',pointerUp); canvas.addEventListener('pointercancel',pointerUp); canvas.addEventListener('wheel',wheel,{passive:false}); window.addEventListener('resize',resizeCanvas); window.addEventListener('keydown',keydown);
