@@ -5,6 +5,7 @@ import { CosmicSonifier } from './audio';
 import { CanvasRecorder, downloadBlob, StillExporter } from './export';
 import { ComputationalRenderer } from './renderer';
 import { detectLanguage, getLanguage, languageNames, setLanguage, t, translations, type Language, type TranslationKey } from './i18n';
+import { storageGet, storageSet } from './storage';
 import type { ApodData, ArchiveItem, DataEnvelope, EarthEvent, EpicFrame, NeoObject, QualityId, SceneId, SolarEvent } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -450,7 +451,7 @@ byId<HTMLButtonElement>('data-panel-toggle').addEventListener('click', (event) =
   }
 });
 byId<HTMLSelectElement>('quality-select').addEventListener('change', (event) => {
-  const quality = (event.target as HTMLSelectElement).value as QualityId; renderer?.setQuality(quality); localStorage.setItem('opus5-quality', quality);
+  const quality = (event.target as HTMLSelectElement).value as QualityId; renderer?.setQuality(quality); storageSet('local', 'opus5-quality', quality);
   const url = new URL(location.href); url.searchParams.set('quality', quality); history.replaceState(null, '', url);
 });
 byId<HTMLButtonElement>('orbit-toggle').addEventListener('click', (event) => {
@@ -467,7 +468,7 @@ recorder.addEventListener('limit', () => { toast('Recording reached the 120-seco
 byId<HTMLFormElement>('settings-form').addEventListener('submit', () => {
   const language = byId<HTMLSelectElement>('language-select').value as Language; setLanguage(language); applyTranslations();
   const key = byId<HTMLInputElement>('api-key-input').value; if (key.trim()) dataHub.setApiKey(key);
-  const reduced = byId<HTMLInputElement>('reduced-motion').checked; renderer?.setReducedMotion(reduced); localStorage.setItem('opus5-reduced-motion', String(reduced));
+  const reduced = byId<HTMLInputElement>('reduced-motion').checked; renderer?.setReducedMotion(reduced); storageSet('local', 'opus5-reduced-motion', String(reduced));
   void loadScene(currentScene, true);
 });
 byId<HTMLButtonElement>('refresh-data').addEventListener('click', () => void loadScene(currentScene, true));
@@ -518,9 +519,9 @@ window.addEventListener('keydown', (event) => {
 
 const params = new URLSearchParams(location.search);
 const requestedScene = params.get('scene');
-const requestedQuality = (params.get('quality') || localStorage.getItem('opus5-quality')) as QualityId | null;
+const requestedQuality = (params.get('quality') || storageGet('local', 'opus5-quality')) as QualityId | null;
 if (requestedQuality && ['auto','low','balanced','high','ultra'].includes(requestedQuality)) { byId<HTMLSelectElement>('quality-select').value = requestedQuality; renderer?.setQuality(requestedQuality); }
-const reduced = localStorage.getItem('opus5-reduced-motion') === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = storageGet('local', 'opus5-reduced-motion') === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 byId<HTMLInputElement>('reduced-motion').checked = reduced; renderer?.setReducedMotion(reduced);
 applyTranslations(); renderSources();
 if (requestedScene && ['orbit','earth','neo','helio','archive'].includes(requestedScene)) setScene(requestedScene as SceneId); else void loadScene('orbit');

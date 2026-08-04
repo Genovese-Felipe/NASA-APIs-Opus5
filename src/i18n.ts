@@ -1,3 +1,5 @@
+import { storageGet, storageSet } from './storage';
+
 export const languageNames = {
   en: 'English',
   'pt-BR': 'Português',
@@ -146,7 +148,7 @@ export const translations: Record<Language, Dictionary> = {
 let currentLanguage: Language = 'en';
 
 export function detectLanguage(): Language {
-  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('opus5-language') : null;
+  const saved = storageGet('local', 'opus5-language');
   if (saved && saved in translations) return saved as Language;
   const language = typeof navigator !== 'undefined' ? navigator.language : 'en';
   if (language.toLowerCase().startsWith('pt')) return 'pt-BR';
@@ -159,7 +161,7 @@ export function setLanguage(language: Language): void {
   currentLanguage = language;
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-  localStorage.setItem('opus5-language', language);
+  storageSet('local', 'opus5-language', language);
 }
 
 export function getLanguage(): Language {

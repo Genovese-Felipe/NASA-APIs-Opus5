@@ -10,6 +10,7 @@ import type {
   NeoObject,
   SolarEvent,
 } from './types';
+import { storageGet, storageRemove, storageSet } from './storage';
 
 const API_ROOT = 'https://api.nasa.gov';
 const EONET_ROOT = 'https://eonet.gsfc.nasa.gov/api/v3';
@@ -293,7 +294,7 @@ export const DEMO_DATA = {
 
 export class NasaDataHub extends EventTarget {
   private readonly broker = new RequestBroker(3);
-  private apiKey = sessionStorage.getItem('opus5-nasa-key') || 'DEMO_KEY';
+  private apiKey = storageGet('session', 'opus5-nasa-key') || 'DEMO_KEY';
   private readonly statuses = new Map<string, ApiStatusDetail>();
 
   get keyIsDemo(): boolean { return this.apiKey === 'DEMO_KEY'; }
@@ -301,8 +302,8 @@ export class NasaDataHub extends EventTarget {
   setApiKey(value: string): void {
     const clean = value.trim() || 'DEMO_KEY';
     this.apiKey = clean;
-    if (clean === 'DEMO_KEY') sessionStorage.removeItem('opus5-nasa-key');
-    else sessionStorage.setItem('opus5-nasa-key', clean);
+    if (clean === 'DEMO_KEY') storageRemove('session', 'opus5-nasa-key');
+    else storageSet('session', 'opus5-nasa-key', clean);
     this.broker.clear();
   }
 
