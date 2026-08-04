@@ -4,6 +4,16 @@
   "quality": 0.86,
   "layers": [
     {
+      "id": "earth",
+      "file": "earth.jpg",
+      "width": 2560,
+      "height": 1280,
+      "level": 2,
+      "label": "Blue Marble (shaded relief and bathymetry)",
+      "attribution": "NASA GIBS / Blue Marble Next Generation",
+      "bytes": 540225
+    },
+    {
       "id": "mars",
       "file": "mars.jpg",
       "width": 2048,

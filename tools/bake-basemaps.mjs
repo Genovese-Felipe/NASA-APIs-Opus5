@@ -35,7 +35,13 @@
  */
 
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
+
+/** readdir that returns [] instead of throwing on a missing directory. */
+async function readdirSafe(dir) {
+  const { readdir } = await import('node:fs/promises');
+  try { return await readdir(dir); } catch { return []; }
+}
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -185,15 +191,36 @@ async function main() {
       process.stdout.write(` -> ${file} ${(bytes.length / 1024).toFixed(0)} KB\n`);
     }
 
-    // Merge rather than replace. Running with --only for one layer must not
-    // erase the record of the others, which is exactly what it did the first
-    // time a rate-limited service forced a per-layer re-run.
-    let previous = [];
-    try {
-      previous = JSON.parse(await readFile(resolve(OUT, 'manifest.json'), 'utf8')).layers || [];
-    } catch { /* first run */ }
-    const merged = [...previous.filter((p) => !manifest.some((m) => m.id === p.id)), ...manifest]
-      .filter((l) => existsSync(resolve(OUT, l.file)))
+    // The manifest is rebuilt from what is actually on disk, not merged with
+    // whatever the last run happened to write.
+    //
+    // Merging from the previous manifest looks equivalent and is not: a run
+    // with --only replaces the file, so a layer baked in an earlier run and
+    // never re-baked drops out of the record while its image sits right there
+    // in the directory. That is precisely what happened to Earth after a
+    // rate-limited service forced two per-layer re-runs. Indexing the
+    // directory cannot drift from the directory.
+    const onDisk = (await readdirSafe(OUT)).filter((f) => /\.(jpg|png)$/.test(f));
+    const merged = onDisk
+      .map((file) => {
+        const id = file.replace(/\.[^.]+$/, '');
+        const fresh = manifest.find((m) => m.id === id);
+        if (fresh) return fresh;
+        const layer = LAYERS[id];
+        const { worldWidth, worldHeight } = layer
+          ? pyramidAt(layer, levelForWidth(WIDTH, layer))
+          : { worldWidth: 0, worldHeight: 0 };
+        return {
+          id,
+          file,
+          width: worldWidth,
+          height: worldHeight,
+          level: layer ? levelForWidth(WIDTH, layer) : null,
+          label: layer?.label ?? null,
+          attribution: layer?.attribution ?? null,
+          bytes: statSync(resolve(OUT, file)).size,
+        };
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
 
     await writeFile(
