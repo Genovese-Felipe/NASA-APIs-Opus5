@@ -569,6 +569,90 @@ test.describe('tours', () => {
   });
 });
 
+test.describe('single-file build', () => {
+  // The single-file build exists to be embedded somewhere else, and every host
+  // worth embedding in applies a Content-Security-Policy. That policy is the
+  // interesting part of the environment and nothing else in this suite exercises
+  // it: the deployed site carries its own permissive-enough CSP, so a bundler
+  // change that only breaks under a strict one is invisible until someone opens
+  // the artifact.
+  //
+  // This has already happened once. The fetch shim that serves the inlined data
+  // used to hand back a blob: URL and fetch it, which `connect-src 'none'`
+  // refuses exactly as it refuses https:. The star catalogue failed to load
+  // during boot, the whole application died with "Failed to fetch", and every
+  // other test in this file stayed green.
+  const STRICT_CSP = [
+    "default-src 'none'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    'img-src data: blob:',
+    'font-src data:',
+    "connect-src 'none'",
+    'media-src data: blob:',
+  ].join('; ');
+
+  // A smaller viewport than the rest of the suite uses. What is being proved
+  // here is that the data reaches the renderer under a policy that forbids
+  // fetching, not that the image is pretty, and a software rasteriser at
+  // 1280x800 spends minutes on frames this test does not need.
+  test.use({ viewport: { width: 640, height: 360 } });
+
+  test('the fragment build boots under a strict Content-Security-Policy', async ({ page }) => {
+    const { spawnSync } = await import('node:child_process');
+    const { readFileSync, mkdtempSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+
+    const out = join(mkdtempSync(join(tmpdir(), 'orrery-')), 'fragment.html');
+    const build = spawnSync(process.execPath, ['tools/build-artifact.mjs', '--fragment', '--quiet', '--out', out], {
+      encoding: 'utf8',
+    });
+    expect(build.status, build.stderr).toBe(0);
+
+    const fragment = readFileSync(out, 'utf8');
+    // The host owns the document, so the fragment must not try to. Checked
+    // against the wrapper specifically rather than by searching for the strings
+    // anywhere: the inlined source contains JSDoc like ReadonlyArray<BodyRecord>,
+    // which a case-insensitive search for "<body" happily matches.
+    expect(fragment.trimStart().startsWith('<style>')).toBe(true);
+    expect(fragment).not.toMatch(/<!doctype|<\/html>|<\/body>/i);
+
+    await page.setContent(
+      `<!doctype html><html><head><meta charset="utf-8">` +
+        `<meta http-equiv="Content-Security-Policy" content="${STRICT_CSP}">` +
+        `</head><body>${fragment}</body></html>`,
+      { waitUntil: 'domcontentloaded' }
+    );
+
+    await page.waitForFunction(() => window.orrery?.scene, null, { timeout: 180_000 });
+    await page.waitForFunction(() => window.orrery.renderer.accumulatedFrames >= 1, null, { timeout: 180_000 });
+
+    // Booting is necessary but not sufficient: the data has to have arrived.
+    expect(await page.evaluate(() => window.orrery.renderer.starCount)).toBeGreaterThan(8000);
+    expect(await page.evaluate(() => window.orrery.scene.bodies.length)).toBeGreaterThan(20);
+
+    // And the frame must not be black.
+    const stats = await page.evaluate(() => {
+      const c = document.getElementById('view');
+      const o = document.createElement('canvas');
+      o.width = 64;
+      o.height = 36;
+      o.getContext('2d').drawImage(c, 0, 0, 64, 36);
+      const d = o.getContext('2d').getImageData(0, 0, 64, 36).data;
+      let sum = 0;
+      let max = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        sum += v;
+        max = Math.max(max, v);
+      }
+      return { mean: sum / (d.length / 4), max };
+    });
+    expect(stats.max).toBeGreaterThan(40);
+  });
+});
+
 test.describe('sharing', () => {
   test('a permalink restores the view', async ({ page }) => {
     await boot(page);

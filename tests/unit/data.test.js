@@ -12,6 +12,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -473,6 +474,38 @@ describe('imagery', () => {
     for (const [body, layerId] of Object.entries(imagery.BODY_LAYERS)) {
       assert.ok(imagery.LAYERS[layerId], `${body} -> ${layerId}`);
     }
+  });
+});
+
+describe('single-file build', () => {
+  // Reading the bundler's source rather than its output: the output is 1.5 MB
+  // and the property being checked is a property of the generator.
+  const bundler = readFileSync(new URL('../../tools/build-artifact.mjs', import.meta.url), 'utf8');
+
+  test('serves inlined data without a network request of any kind', () => {
+    // A blob: URL fetched back is the obvious implementation and it is refused
+    // by connect-src 'none', which is exactly the environment the single-file
+    // build is for. Constructing the Response directly performs no request, so
+    // there is nothing for a policy to refuse.
+    assert.ok(
+      /new Response\(JSON\.stringify\(body\)/.test(bundler),
+      'the fetch shim must construct its Response in memory'
+    );
+    assert.ok(
+      !bundler.includes('createObjectURL'),
+      'the single-file runtime must not round-trip data through a blob: URL'
+    );
+  });
+
+  test('the fragment build emits no document wrapper', () => {
+    // The embedding host owns <head>; a nested <html> is discarded along with
+    // everything inside it.
+    const fragmentBranch = bundler.slice(bundler.indexOf('FRAGMENT'));
+    assert.ok(fragmentBranch.includes('FRAGMENT'), 'the fragment mode is missing');
+    assert.ok(
+      /FRAGMENT\s*\n?\s*\?/.test(bundler) || bundler.includes('const out = FRAGMENT'),
+      'the fragment branch must bypass the document wrapper'
+    );
   });
 });
 

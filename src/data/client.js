@@ -360,8 +360,14 @@ export async function fetchJSON(apiId, url, opts = {}) {
  */
 export async function loadSnapshot(apiId) {
   const entry = API_BY_ID.get(apiId);
-  const file = entry?.snapshot || `${apiId}.json`;
-  const url = new URL(`./snapshots/${file}`, import.meta.url);
+  // Only the services the registry says have one. Guessing at a conventional
+  // filename instead meant that every *live* service which failed — the common
+  // case, since DEMO_KEY runs out after thirty requests an hour — immediately
+  // fired a second request for a file that has never existed, turning one
+  // failure into two and filling the console with 404s that look like a broken
+  // deployment.
+  if (!entry?.snapshot) return null;
+  const url = new URL(`./snapshots/${entry.snapshot}`, import.meta.url);
   const memKey = `snapshot:${apiId}`;
   const cachedSnap = memory.get(memKey);
   if (cachedSnap) return cachedSnap;

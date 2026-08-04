@@ -213,12 +213,15 @@ async function main() {
   const html = await readFile(resolve(ROOT, 'index.html'), 'utf8');
   const locales = await buildLocales();
 
-  // Take the body of index.html, minus the module script tag and the stylesheet
-  // link, both of which are being inlined.
+  // Take the body of index.html, minus every external reference: the module
+  // entry point and the stylesheet are being inlined, and the boot guard has
+  // nothing left to guard once the module graph is part of the file. Any
+  // src= that survived to here would be a dead link in a build whose entire
+  // purpose is to have none.
   const bodyMatch = html.match(/<body>([\s\S]*)<\/body>/);
   let body = bodyMatch ? bodyMatch[1] : '';
   body = body
-    .replace(/<script type="module"[^>]*><\/script>/g, '')
+    .replace(/<script\b[^>]*\bsrc=[^>]*>\s*<\/script>/g, '')
     .replace(/<link rel="stylesheet"[^>]*>/g, '');
 
   // The i18n layer loads a catalogue with a dynamic import; point it at the
@@ -246,7 +249,7 @@ async function main() {
 
   const moduleSource = [...modules.values()]
     .filter(Boolean)
-    .map((m) => `__def(${JSON.stringify(m.id)}, function(__exports, __req, __json){\n${m.code}\n});`)
+    .map((m) => `__def(${JSON.stringify(m.id)}, function(__exports, __req){\n${m.code}\n});`)
     .join('\n\n');
 
   const jsonSource = [...jsonAssets.entries()]
@@ -267,7 +270,7 @@ function __req(id) {
   __cache.set(id, exports);
   const fn = __registry.get(id);
   if (!fn) throw new Error('module not found: ' + id);
-  fn(exports, __req, __json);
+  fn(exports, __req);
   return exports;
 }
 
@@ -275,25 +278,33 @@ function __req(id) {
 const __jsonData = {
 ${jsonSource}
 };
-const __jsonUrls = new Map();
-function __json(key) {
-  if (!__jsonUrls.has(key)) {
-    const blob = new Blob([JSON.stringify(__jsonData[key])], { type: 'application/json' });
-    __jsonUrls.set(key, URL.createObjectURL(blob));
-  }
-  return __jsonUrls.get(key);
-}
 
 // Every data file is addressed against a virtual origin that mirrors the
 // repository layout. Intercepting fetch here means the application code needs
 // no knowledge that it is running as a single file.
+//
+// The response is CONSTRUCTED, not fetched. Wrapping the data in a Blob and
+// handing back its object URL is the obvious way to do this, and it works
+// everywhere except the one place this build exists for: an embedding host
+// that applies a strict Content-Security-Policy. A policy of
+// connect-src 'none' refuses blob: exactly as it refuses https:, so the first
+// data load -- the star catalogue, during boot -- failed with "Failed to
+// fetch" and took the whole application down with it before a single frame
+// was drawn. new Response() performs no fetch at all, so there is no request
+// for a policy to refuse.
 const __VIRTUAL = 'https://orrery.local/';
 const __realFetch = window.fetch.bind(window);
 window.fetch = function (input, init) {
   const url = String(input && input.href ? input.href : input);
   if (url.startsWith(__VIRTUAL)) {
     const key = decodeURIComponent(url.slice(__VIRTUAL.length)).replace(/^\\/+/, '');
-    if (__jsonData[key]) return __realFetch(__json(key));
+    const body = __jsonData[key];
+    if (body !== undefined) {
+      return Promise.resolve(new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+    }
     return Promise.resolve(new Response('{}', { status: 404 }));
   }
   return __realFetch(input, init);

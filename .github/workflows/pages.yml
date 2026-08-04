@@ -1,5 +1,11 @@
 name: Deploy to GitHub Pages
 
+# Publishes on every push to main. To publish from any other branch — to preview
+# a change before merging it — run this workflow manually from the Actions tab
+# and pick that branch; workflow_dispatch honours whichever ref you select.
+#
+# Neither will produce a site until Pages itself is enabled. See the
+# "Check that GitHub Pages is switched on" step below.
 on:
   push:
     branches: [main]
@@ -41,6 +47,39 @@ jobs:
 
       - name: Build the single-file artifact
         run: node tools/build-artifact.mjs --out _site/standalone.html
+
+      # Pages has to be switched on by a human before any of this can publish.
+      # A workflow token cannot do it for you: asking configure-pages to create
+      # the site returns "Resource not accessible by integration", and without
+      # it you get a bare "Not Found". Both are opaque enough that a repository
+      # can sit un-published for a long time while every other check is green,
+      # so say plainly what is wrong and who has to fix it.
+      - name: Check that GitHub Pages is switched on
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1; then
+            echo "GitHub Pages is enabled."
+            exit 0
+          fi
+          cat <<'MSG' >&2
+          ================================================================
+          GitHub Pages is NOT enabled for this repository, so there is
+          nothing to deploy to and the site URL will return 404.
+
+          A repository owner or admin has to turn it on, once:
+
+            Settings -> Pages -> Build and deployment
+            Source: "GitHub Actions"
+
+          This workflow cannot do it: the token it runs with is not
+          permitted to create a Pages site.
+
+          Everything else in this run succeeded. Re-run it after enabling
+          Pages and the site will publish.
+          ================================================================
+          MSG
+          exit 1
 
       - uses: actions/configure-pages@v5
 

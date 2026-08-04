@@ -53,8 +53,29 @@ npm run dev          # http://localhost:8080
 ```
 
 No install step is needed to *run* it — `npm install` is only for the test suite.
+Any static server will do; `tools/serve.mjs` is thirty lines and has no dependencies.
 
 There is also a **single-file build**: `npm run build:artifact` produces `standalone.html`, one self-contained file with the whole application and all 8,751 stars inside it. Open it with `file://`, email it, put it on a USB stick; it needs nothing.
+
+> **Opening `index.html` straight from the file system will not work.** The app is
+> native ES modules, and browsers refuse to load modules over `file://`. That is
+> what `standalone.html` is for — it is a single file with no imports, so it opens
+> from disk with no server at all.
+
+### The published site is 404
+
+GitHub Pages has to be enabled by a repository admin before anything can deploy
+to it, and a workflow token is not allowed to enable it — the deploy fails with
+`Resource not accessible by integration`, or just `Not Found`, while every other
+check stays green. One-time fix:
+
+**Settings → Pages → Build and deployment → Source: “GitHub Actions”**
+
+Then push to `main`, or run *Deploy to GitHub Pages* from the Actions tab against
+whichever branch you want to publish.
+
+In the meantime every CI run uploads the whole built site — `standalone.html`
+included — as a downloadable artifact. Actions → the run → **Artifacts → site**.
 
 ## What you can do
 

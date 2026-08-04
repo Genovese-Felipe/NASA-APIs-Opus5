@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Not found — ORRERY</title>
+<!-- The only file in this project allowed root-absolute paths, and required to
+     use them. GitHub serves 404.html for any missing path under the domain, so
+     a relative href here resolves against whatever the visitor mistyped rather
+     than against the site root. The cost is that the repository name is baked
+     in: rename the repository, or move it to a custom domain, and these two
+     links are what you have to change. tools/lint.mjs exempts this file by
+     name for exactly this reason. -->
 <link rel="stylesheet" href="/NASA-APIs-Opus5/src/styles/app.css">
 <style>
   body { display:grid; place-items:center; height:100vh; text-align:center; }

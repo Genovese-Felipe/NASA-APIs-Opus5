@@ -92,11 +92,25 @@ export class App {
     // which is diffuse and low-frequency and so loses nothing to a texture's
     // fixed angular resolution, and the point buffers carry the stars, which
     // lose everything to it.
-    const catalogue = await loadStarCatalogue();
+    //
+    // The stars are scenery. Losing them should cost you the sky, not the
+    // application — and because this is the first thing boot fetches, an
+    // unguarded await here turns any problem with it into a dead black screen
+    // before a single planet has been drawn. That is precisely what happened
+    // when a strict Content-Security-Policy blocked the single-file build's
+    // data loader: one refused request, and nothing worked at all.
+    let catalogue = null;
+    try {
+      catalogue = await loadStarCatalogue();
+    } catch (err) {
+      console.warn('Star catalogue unavailable; continuing without it.', err);
+    }
     this.starCatalogue = catalogue;
-    const skySize = this.renderer.quality.surfaceTextureSize >= 4096 ? 4096 : 2048;
-    this.renderer.setSkyMap(buildSkyMap(catalogue, { width: skySize, height: skySize / 2 }));
-    this.renderer.setStars(buildStarPoints(catalogue));
+    if (catalogue) {
+      const skySize = this.renderer.quality.surfaceTextureSize >= 4096 ? 4096 : 2048;
+      this.renderer.setSkyMap(buildSkyMap(catalogue, { width: skySize, height: skySize / 2 }));
+      this.renderer.setStars(buildStarPoints(catalogue));
+    }
 
     onProgress(0.55, 'app.loadingData');
 

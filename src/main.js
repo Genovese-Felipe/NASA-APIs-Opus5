@@ -129,9 +129,14 @@ async function main() {
       dom.bootFill.style.width = `${Math.round(fraction * 100)}%`;
       dom.bootStatus.textContent = t(statusKey);
     });
+    // Disarm the watchdog in boot-guard.js before hiding the overlay, or a slow
+    // start that nonetheless succeeded would paint a failure over a running
+    // application.
+    window.__orreryBooted?.();
     dom.boot.classList.add('is-done');
     setTimeout(() => { dom.boot.hidden = true; }, 700);
   } catch (error) {
+    window.__orreryBooted?.();
     showBootError(dom, error);
     // Re-throw so the failure is visible in the console and to any test
     // harness watching for page errors.

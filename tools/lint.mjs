@@ -161,6 +161,33 @@ async function main() {
     /<meta\s+http-equiv=["']Content-Security-Policy["']\s+content=["']([\s\S]*?)["']\s*>/i
   );
   if (!metaMatch) err(resolve(ROOT, 'index.html'), 'no Content-Security-Policy meta tag found');
+
+  // With `default-src 'none'` every resource type the page uses needs its own
+  // directive, and the failure mode when one is missing is quiet: the browser
+  // blocks the request, logs to a console nobody is reading, and the page looks
+  // almost right. The web manifest was missing for exactly this reason. So each
+  // kind of reference in the markup is checked against the directive that
+  // governs it.
+  if (metaMatch) {
+    const policy = metaMatch[1];
+    const governs = [
+      [/<link[^>]+rel=["']manifest["']/i, 'manifest-src', 'a web manifest'],
+      [/<link[^>]+rel=["']stylesheet["']/i, 'style-src', 'a stylesheet'],
+      [/<script\b/i, 'script-src', 'a script'],
+      [/<img\b|<link[^>]+rel=["']icon["']/i, 'img-src', 'an image or icon'],
+    ];
+    if (/default-src\s+'none'/.test(policy)) {
+      for (const [pattern, directive, what] of governs) {
+        if (!pattern.test(indexHtml)) continue;
+        if (new RegExp(`(^|;)\\s*${directive}\\b`).test(policy)) continue;
+        err(
+          resolve(ROOT, 'index.html'),
+          `the document references ${what} but the CSP has no ${directive}, and default-src is 'none'`
+        );
+      }
+    }
+  }
+
   const cspMatch = metaMatch ? metaMatch[1].match(/connect-src([^;]*)/) : null;
   const allowed = cspMatch
     ? new Set(cspMatch[1].split(/\s+/).filter((s) => s.startsWith('https://')).map(hostOf))

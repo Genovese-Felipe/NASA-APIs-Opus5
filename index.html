@@ -29,6 +29,8 @@
   connect-src 'self' https://api.nasa.gov https://eonet.gsfc.nasa.gov https://images-api.nasa.gov https://images-assets.nasa.gov https://gibs.earthdata.nasa.gov https://trek.nasa.gov https://kauai.ccmc.gsfc.nasa.gov https://webtools.ccmc.gsfc.nasa.gov https://power.larc.nasa.gov https://sscweb.gsfc.nasa.gov https://tle.ivanstanojevic.me;
   media-src 'self' blob:;
   font-src 'self';
+  manifest-src 'self';
+
   base-uri 'none';
   form-action 'none';
   object-src 'none';
@@ -218,12 +220,20 @@
   </div>
 </div>
 
+<!-- A classic script, first, so that a net exists before the module system is
+     asked for anything. If src/main.js never arrives there is nothing else left
+     to tell the visitor why. -->
+<script src="src/boot-guard.js"></script>
 <script type="module" src="src/main.js"></script>
 <noscript>
   <div class="noscript">
     <h1>ORRERY</h1>
     <p>This is an interactive 3D application and needs JavaScript to run.</p>
-    <p>The <a href="docs/">documentation</a> describes what it does and shows what it looks like.</p>
+    <!-- Points at GitHub rather than at the copy of docs/ deployed alongside
+         this page: Jekyll is disabled (.nojekyll), so a directory containing a
+         README.md and no index.html is a 404 here, whereas GitHub renders the
+         same Markdown properly. -->
+    <p>The <a href="https://github.com/Genovese-Felipe/NASA-APIs-Opus5/tree/main/docs">documentation</a> describes what it does and shows what it looks like.</p>
   </div>
 </noscript>
 </body>
