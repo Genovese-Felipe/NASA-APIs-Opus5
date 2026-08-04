@@ -36,6 +36,10 @@ NASA does not expose one immutable, universally browser-embeddable API surface. 
 
 This is broader—and more honest—than firing every endpoint from a browser until CORS, policy, or rate limits fail.
 
+## If the public URL shows 404 or a blank page
+
+The repository now contains both the Vite build path and compiled root assets, so it works with either **GitHub Actions** Pages or the classic **Deploy from a branch** mode. If the URL is still unavailable, enable Pages once at **Settings → Pages → Build and deployment** and choose either **GitHub Actions** or **Deploy from a branch / main / root**. Then rerun the workflow from the **Actions** tab. The workflow's code/tests/build already pass; a 404 at this point means the Pages site itself has not been enabled for the repository account.
+
 ## Quick start
 
 Requirements: Node.js 20 or newer.
