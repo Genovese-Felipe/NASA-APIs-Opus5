@@ -55,7 +55,7 @@ The `DEMO_KEY` is used by default. To use a personal NASA key, open Settings ins
 
 ## GitHub Pages
 
-The workflow at `.github/workflows/pages.yml` publishes the repository root on pushes to `main` and on manual dispatch. In the repository settings, set Pages → Build and deployment → Source to **GitHub Actions**. No build step is required.
+The workflow at `.github/workflows/pages.yml` publishes the repository root on pushes to `main` and on manual dispatch. It requests Pages enablement through `actions/configure-pages` and uses the GitHub Actions source. No build step is required. If GitHub account policy blocks automatic enablement, select Pages → Build and deployment → Source → **GitHub Actions** once in repository settings and rerun the workflow.
 
 ## Captures and video
 
