@@ -1,13 +1,26 @@
 {
-  "name": "orbital-nasa-api-observatory",
+  "name": "nasa-apis-opus5",
   "private": true,
   "version": "1.0.0",
-  "description": "A static NASA Open APIs observatory for GitHub Pages.",
+  "type": "module",
+  "description": "NASA COSMOS // OPUS 5 — a live computational observatory for NASA open data.",
   "scripts": {
-    "test": "node tests/smoke.mjs",
-    "artifact": "node scripts/build-artifact.mjs"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && npm run validate:dist",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate:dist": "node scripts/validate-dist.mjs",
+    "artifact": "npm run build && node scripts/build-artifact.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.6",
+    "vitest": "^3.2.4"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

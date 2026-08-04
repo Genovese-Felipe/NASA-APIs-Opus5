@@ -1,0 +1,12 @@
+{
+  "name": "NASA COSMOS // OPUS 5",
+  "short_name": "OPUS 5",
+  "description": "A live computational observatory for NASA open data.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030509",
+  "theme_color": "#030509",
+  "categories": ["education", "science", "entertainment"]
+}
