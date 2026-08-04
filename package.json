@@ -1,0 +1,13 @@
+{
+  "name": "orbital-nasa-api-observatory",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A static NASA Open APIs observatory for GitHub Pages.",
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "artifact": "node scripts/build-artifact.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
