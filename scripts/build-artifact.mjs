@@ -51,6 +51,6 @@ html = html
 
 if (/src="\.\/assets|href="\.\/assets/.test(html)) throw new Error('Artifact still contains local build dependencies');
 await mkdir(resolve(project, 'artifact'), { recursive: true });
-const output = resolve(project, 'artifact', 'NASA-COSMOS-OPUS5-Claude-Artifact.html');
+const output = resolve(project, 'artifact', 'NASA-COSMOS-OPUS5-Standalone-Artifact.html');
 await writeFile(output, html, 'utf8');
 console.log(JSON.stringify({ status: 'created', output, bytes: Buffer.byteLength(html) }));

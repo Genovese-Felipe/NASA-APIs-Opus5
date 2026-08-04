@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const project = resolve(new URL('..', import.meta.url).pathname);
-const output = resolve(project, 'artifact', 'NASA-COSMOS-OPUS5-Claude-Artifact.html');
+const output = resolve(project, 'artifact', 'NASA-COSMOS-OPUS5-Standalone-Artifact.html');
 const html = await readFile(output, 'utf8');
 const browserErrors = [];
 const virtualConsole = new VirtualConsole();
