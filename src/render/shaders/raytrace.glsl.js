@@ -98,6 +98,17 @@ uniform float uSunRadius;         // Mm
 uniform vec3  uSunColor;          // linear RGB * intensity
 
 uniform vec4  uRingRadii[MAX_RINGS];  // xy = inner/outer radius (Mm), z = body index, w = mean opacity
+
+// --- cutaway ---------------------------------------------------------------
+// Opening a planet up. uCutBody is the index of the body to section, or -1;
+// uCutNormal is the outward normal of the cutting plane through its centre;
+// uCutOpen fades the section in. uInteriorLUT holds the layer colours of every
+// modelled interior, one row per body, sampled by normalised radius.
+uniform int       uCutBody;
+uniform vec3      uCutNormal;
+uniform float     uCutOpen;
+uniform int       uCutRow;
+uniform sampler2D uInteriorLUT;
 uniform int   uRingCount;
 
 uniform int   uScatterSteps;      // view-ray samples inside an atmosphere
@@ -555,6 +566,8 @@ struct Hit {
   float t;
   vec3  p;
   vec3  n;
+  float cut;    // 1 when this is the sectioned face rather than the surface
+  float depth;  // radius of that face as a fraction of the body radius
 };
 
 // Nearest body along the ray.
@@ -562,43 +575,134 @@ Hit traceBodies(vec3 ro, vec3 rd) {
   Hit h;
   h.idx = -1;
   h.t = INF;
+  h.cut = 0.0;
+  h.depth = 0.0;
   for (int i = 0; i < MAX_BODIES; i++) {
     if (i >= uBodyCount) break;
     vec4 rowPos = bodyRow(i, ROW_POS);
     float R = rowPos.w;
     if (R <= 0.0) continue;
     float oblate = bodyRow(i, ROW_MISC).z;
+
+    // Entry and exit parameters along the ray, plus enough state to build the
+    // surface normal afterwards. Both branches produce the same two numbers,
+    // which is what lets the cutaway below be written once instead of twice —
+    // it was written once for spheres, and Earth, being oblate, never reached
+    // it.
     vec2 t;
-    if (oblate > 1e-4) {
+    mat3 F;
+    vec3 lo, ld, invR;
+    bool spheroid = oblate > 1e-4;
+    if (spheroid) {
       vec3 axis = bodyRow(i, ROW_AXIS).xyz;
-      mat3 F = bodyFrame(axis, 0.0);
-      vec3 lo = (ro - rowPos.xyz) * F;       // world -> body (F is orthonormal)
-      vec3 ld = rd * F;
-      vec3 invR = vec3(1.0 / R, 1.0 / R, 1.0 / (R * (1.0 - oblate)));
+      F = bodyFrame(axis, 0.0);
+      lo = (ro - rowPos.xyz) * F;            // world -> body (F is orthonormal)
+      ld = rd * F;
+      invR = vec3(1.0 / R, 1.0 / R, 1.0 / (R * (1.0 - oblate)));
       if (!intersectSpheroid(lo, ld, invR, t)) continue;
-      if (t.y < EPS) continue;
-      float tt = t.x > EPS ? t.x : t.y;
-      if (tt >= h.t) continue;
-      h.idx = i; h.t = tt;
-      vec3 lp = lo + ld * tt;
-      vec3 ln = normalize(lp * invR * invR);
-      h.n = F * ln;
-      h.p = ro + rd * tt;
     } else {
       if (!intersectSphere(ro, rd, rowPos.xyz, R, t)) continue;
-      if (t.y < EPS) continue;
-      float tt = t.x > EPS ? t.x : t.y;
-      if (tt >= h.t) continue;
-      h.idx = i; h.t = tt;
-      h.p = ro + rd * tt;
+    }
+    if (t.y < EPS) continue;
+
+    float tt = t.x > EPS ? t.x : t.y;
+    float cut = 0.0;
+    float depth = 0.0;
+
+    // The sectioned body. Everything on the positive side of the plane is
+    // removed, so a ray that would have struck there instead reveals either the
+    // flat face where it crosses the plane, or — if it misses the plane inside
+    // the body entirely — the inside of the far wall.
+    //
+    // No extra intersection test is needed for the face: the plane crossing is
+    // one dot product, and entry and exit are already in hand. The plane cuts
+    // the spheroid exactly as it cuts a sphere; only the depth read-off has to
+    // know that the body is not round, and at a flattening of 1/298 that is
+    // below the width of a layer boundary.
+    if (uCutBody == i && uCutOpen > 0.0) {
+      vec3 c = rowPos.xyz;
+      // The cutting plane is built here, from the body's own direction, rather
+      // than taken wholesale from the camera basis. Passing a camera-derived
+      // normal in worked only when the body happened to sit on the view axis:
+      // off-centre, the plane through the body's centre was no longer square to
+      // the line of sight to *that body*, and the exposed disc collapsed to a
+      // sliver at the limb. Anchoring it to -normalize(c) makes the section
+      // face the viewer wherever the body appears in frame; uCutNormal now
+      // only supplies the sideways tilt that keeps a crescent of real surface
+      // visible beside it.
+      vec3 toCam = normalize(-c);
+      vec3 tangent = normalize(uCutNormal - toCam * dot(uCutNormal, toCam));
+      vec3 planeN = normalize(toCam + tangent * 0.55);
+      float denom = dot(rd, planeN);
+      float tPlane = abs(denom) > 1e-9 ? -dot(ro - c, planeN) / denom : -1.0;
+      bool entryRemoved = dot((ro + rd * max(t.x, 0.0)) - c, planeN) > 0.0;
+      if (entryRemoved) {
+        if (tPlane > max(t.x, EPS) && tPlane < t.y) {
+          tt = tPlane;
+          cut = uCutOpen;
+          depth = clamp(length((ro + rd * tPlane) - c) / R, 0.0, 1.0);
+        } else {
+          tt = t.y;              // looking through at the inside of the far wall
+        }
+      }
+    }
+
+    if (tt >= h.t) continue;
+    h.idx = i; h.t = tt;
+    h.p = ro + rd * tt;
+    h.cut = cut;
+    h.depth = depth;
+
+    if (cut > 0.5) {
+      // The face's outward normal points into the removed volume, which is the
+      // +n side by construction.
+      vec3 toCam = normalize(-rowPos.xyz);
+      vec3 tangent = normalize(uCutNormal - toCam * dot(uCutNormal, toCam));
+      h.n = normalize(toCam + tangent * 0.55);
+    } else if (spheroid) {
+      vec3 lp = lo + ld * tt;
+      h.n = F * normalize(lp * invR * invR);
+    } else {
       h.n = normalize(h.p - rowPos.xyz);
     }
   }
   return h;
 }
 
+// The exposed interior of a sectioned body.
+//
+// Colour comes from the interior look-up table, which is built on the CPU from
+// the same layer model that produces the numbers in the panel — so the band you
+// see at a given depth is the layer whose density, gravity and pressure are
+// being quoted, not a decorative gradient.
+//
+// Lit as a Lambertian face rather than left emissive, because a flat disc that
+// ignores where the Sun is reads as a sticker rather than as a solid that has
+// been opened. A floor of ambient keeps the deep interior legible when the cut
+// faces away from the Sun; it is a diagram as much as a rendering.
+vec3 shadeCut(Hit hit, vec3 rd) {
+  float u = clamp(hit.depth, 0.0, 1.0);
+  float v = (float(uCutRow) + 0.5) / 8.0;
+  vec3 layer = texture(uInteriorLUT, vec2(u, v)).rgb;
+
+  vec3 L = normalize(uSunPos - hit.p);
+  float irr = irradianceAt(length(uSunPos - hit.p));
+  float lambert = max(dot(hit.n, L), 0.0) * sunVisibility(hit.p, hit.idx);
+
+  // A faint darkening towards each boundary, which is what makes the layers
+  // read as distinct shells rather than as a smooth ramp.
+  float edge = smoothstep(0.0, 0.012, abs(fract(u * 64.0) - 0.5) * 0.03 + 0.006);
+
+  // A high ambient floor. This face is a diagram of something no light has
+  // ever reached; lighting it purely by the Sun would be principled and
+  // useless.
+  vec3 lit = layer * uSunColor * irr * (0.55 + 0.45 * lambert) * edge;
+  return lit;
+}
+
 // Radiance leaving a point on a body towards the camera.
 vec3 shadeSurface(Hit hit, vec3 rd) {
+  if (hit.cut > 0.5) return shadeCut(hit, rd);
   Body b = getBody(hit.idx);
   vec3 N = hit.n;
   vec3 V = -rd;

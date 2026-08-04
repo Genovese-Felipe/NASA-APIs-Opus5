@@ -32,6 +32,7 @@ function collectDom() {
     btnLanguage: $('btn-language'),
     btnHelp: $('btn-help'),
     btnHideUI: $('btn-hide-ui'),
+    btnShowUI: $('btn-show-ui'),
     rail: $('rail'),
     bodyList: $('body-list'),
     panel: $('panel'),

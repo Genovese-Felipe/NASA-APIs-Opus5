@@ -26,6 +26,9 @@ import {
 } from '../../src/astro/time.js';
 import { AU_KM, JD_J2000, OBLIQUITY_J2000, GM_SUN, C_KM_S } from '../../src/astro/constants.js';
 import { bvToTemperature, blackbodyRGB, magnitudeToFlux, raDecToEclipticVec, buildStarPoints, buildSkyMap } from '../../src/astro/stars.js';
+import {
+  premDensity, integrateStructure, structureOf, sampleAt, layerAt, INTERIORS, PREM_R, G,
+} from '../../src/astro/interior.js';
 
 const DEG = Math.PI / 180;
 
@@ -586,3 +589,123 @@ describe('constants', () => {
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
+
+
+describe('planetary interiors', () => {
+  // The whole point of integrating PREM rather than tabulating it is that the
+  // answers are then checkable. PREM is fitted to Earth's mass and moment of
+  // inertia; it is NOT fitted to surface gravity or to the pressure anywhere,
+  // so those fall out as predictions and can be compared with what the paper
+  // and the literature report. If the transcription of the density polynomials
+  // were wrong, or the hydrostatic integration were wrong, these would miss.
+  const earth = structureOf('earth');
+
+  test('reproduces Earth\'s mass from the density profile alone', () => {
+    // Measured: 5.9722e24 kg. PREM is fitted to it, so agreement is expected —
+    // but only if the polynomials and the volume element are both right.
+    const relative = Math.abs(earth.totalMass - 5.9722e24) / 5.9722e24;
+    assert.ok(relative < 0.002, `mass off by ${(relative * 100).toFixed(3)}%`);
+  });
+
+  test('predicts surface gravity', () => {
+    assert.ok(Math.abs(earth.surfaceGravity - 9.82) < 0.05, `g = ${earth.surfaceGravity}`);
+  });
+
+  test('predicts the pressure at every named boundary', () => {
+    // Published PREM values, in GPa.
+    const expected = [
+      [3480, 135.8, 'core-mantle boundary'],
+      [1221.5, 328.9, 'inner-core boundary'],
+      [0, 363.9, 'centre'],
+    ];
+    for (const [rKm, gpa, where] of expected) {
+      const got = (rKm === 0 ? earth.centralPressure : sampleAt('earth', rKm).pressure) / 1e9;
+      assert.ok(Math.abs(got - gpa) < 1.5, `${where}: ${got.toFixed(1)} GPa, expected ${gpa}`);
+    }
+  });
+
+  test('gravity peaks at the core-mantle boundary, not at the surface', () => {
+    // A non-obvious consequence of the density jump at the CMB, and a good
+    // check that the integration is doing real work: below it, enclosed mass
+    // falls faster than r^2 does.
+    let peak = 0;
+    let peakR = 0;
+    for (let i = 0; i < earth.radius.length; i++) {
+      if (earth.gravity[i] > peak) { peak = earth.gravity[i]; peakR = earth.radius[i]; }
+    }
+    assert.ok(Math.abs(peakR - 3480) < 40, `peak at ${peakR.toFixed(0)} km, expected ~3480`);
+    assert.ok(peak > earth.surfaceGravity, 'peak gravity must exceed surface gravity');
+  });
+
+  test('gravity is zero at the centre and rises monotonically through the core', () => {
+    // Newton's shell theorem: no enclosed mass, no force. The expression is
+    // 0/0 there and must be special-cased rather than evaluated.
+    assert.equal(earth.gravity[0], 0);
+    assert.ok(Number.isFinite(earth.gravity[1]));
+    const inner = earth.radius.findIndex((r) => r > 1221.5);
+    for (let i = 2; i < inner; i++) {
+      assert.ok(earth.gravity[i] >= earth.gravity[i - 1], `gravity dips inside the inner core at ${earth.radius[i]}`);
+    }
+  });
+
+  test('pressure decreases monotonically outward and vanishes at the surface', () => {
+    for (let i = 1; i < earth.pressure.length; i++) {
+      assert.ok(earth.pressure[i] <= earth.pressure[i - 1] + 1, 'pressure must not rise outward');
+    }
+    assert.equal(earth.pressure[earth.pressure.length - 1], 0);
+  });
+
+  test('the density profile has the discontinuities PREM says it has', () => {
+    // Core-mantle boundary: roughly 9900 -> 5560 kg/m^3.
+    assert.ok(premDensity(3479) > 9000, 'outer core too light');
+    assert.ok(premDensity(3481) < 6500, 'lower mantle too heavy');
+    assert.ok(premDensity(0) > 13000, 'centre too light');
+    assert.ok(premDensity(PREM_R) < 1100, 'the ocean is not water');
+  });
+
+  test('a uniform sphere gives back the textbook answers', () => {
+    // The one case with a closed form, so it isolates the integrator from the
+    // density model: for constant rho, g(R) = 4/3 pi G rho R and the central
+    // pressure is 2/3 pi G rho^2 R^2.
+    const rho = 5000;
+    const Rkm = 1000;
+    const Rm = Rkm * 1000;
+    const s = integrateStructure(() => rho, Rkm, { steps: 20000 });
+    const gExact = (4 / 3) * Math.PI * G * rho * Rm;
+    const pExact = (2 / 3) * Math.PI * G * rho * rho * Rm * Rm;
+    assert.ok(Math.abs(s.surfaceGravity - gExact) / gExact < 1e-4, `g ${s.surfaceGravity} vs ${gExact}`);
+    assert.ok(Math.abs(s.centralPressure - pExact) / pExact < 1e-3, `P ${s.centralPressure} vs ${pExact}`);
+  });
+
+  test('every modelled body names a source and covers its whole radius', () => {
+    for (const [id, model] of Object.entries(INTERIORS)) {
+      assert.ok(model.source && model.source.length > 8, `${id} has no source`);
+      assert.ok(['seismic', 'layered'].includes(model.model), `${id} model kind`);
+      assert.equal(model.layers[0].inner, 0, `${id} does not start at the centre`);
+      const outermost = model.layers[model.layers.length - 1].outer;
+      assert.ok(Math.abs(outermost - model.radiusKm) < 1, `${id} layers stop at ${outermost}`);
+      for (let i = 1; i < model.layers.length; i++) {
+        assert.equal(model.layers[i].inner, model.layers[i - 1].outer, `${id} has a gap`);
+      }
+    }
+  });
+
+  test('the other bodies reproduce their measured masses', () => {
+    // These are constant-density shell models, so this is a much weaker claim
+    // than for Earth — but a model that misses the mass badly is not a model.
+    const measured = { moon: 7.346e22, mars: 6.417e23 };
+    for (const [id, kg] of Object.entries(measured)) {
+      const s = structureOf(id);
+      const rel = Math.abs(s.totalMass - kg) / kg;
+      assert.ok(rel < 0.15, `${id} mass off by ${(rel * 100).toFixed(1)}%`);
+    }
+  });
+
+  test('locates a radius in the right layer', () => {
+    assert.equal(layerAt('earth', 0).id, 'inner-core');
+    assert.equal(layerAt('earth', 2000).id, 'outer-core');
+    assert.equal(layerAt('earth', 5000).id, 'lower-mantle');
+    assert.equal(layerAt('earth', 6360).id, 'crust');
+    assert.equal(layerAt('mars', 1000).id, 'core');
+  });
+});

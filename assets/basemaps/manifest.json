@@ -1,0 +1,27 @@
+{
+  "generatedBy": "tools/bake-basemaps.mjs",
+  "note": "Low-resolution copies of NASA basemaps, committed so the app shows real surfaces offline and before the streamed tiles arrive. NASA imagery is not copyrighted; see DATA-AND-CREDITS.md for the per-layer attribution.",
+  "quality": 0.86,
+  "layers": [
+    {
+      "id": "mars",
+      "file": "mars.jpg",
+      "width": 2048,
+      "height": 1024,
+      "level": 2,
+      "label": "Viking MDIM 2.1 colour mosaic",
+      "attribution": "NASA / JPL / USGS — Viking MDIM21",
+      "bytes": 554854
+    },
+    {
+      "id": "mercury",
+      "file": "mercury.jpg",
+      "width": 2048,
+      "height": 1024,
+      "level": 2,
+      "label": "MESSENGER MDIS global basemap",
+      "attribution": "NASA / JHUAPL / Carnegie — MESSENGER MDIS",
+      "bytes": 554543
+    }
+  ]
+}

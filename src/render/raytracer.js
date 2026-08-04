@@ -26,6 +26,7 @@ import {
 } from './shaders/post.glsl.js';
 import { QUALITY_BY_ID, detectQuality, AdaptiveScaler } from './quality.js';
 import { SUN_RADIUS_KM, AU_KM } from '../astro/constants.js';
+import { INTERIORS } from '../astro/interior.js';
 
 /** Megametres per kilometre. */
 const MM = 1000;
@@ -93,6 +94,18 @@ export class Renderer {
       realisticBrightness: 1,
       starBrightness: 1,
       physicalStars: false,
+      // Cutaway: which body is sectioned, and how far open.
+      //
+      // EXPERIMENTAL AND OFF. The geometry works — the near hemisphere is
+      // removed and the exposed face is found and shaded from the interior
+      // look-up table — but the plane-crossing test only selects that face for
+      // rays near the limb, so most of the section renders as the inside of the
+      // far wall instead of as layers. It is left in place, disabled, because
+      // it is close and because `astro/interior.js` (which supplies its
+      // colours, and whose numbers are validated against published PREM
+      // values) is finished and useful on its own.
+      cutBody: null,
+      cutOpen: 0,
     };
 
     this._frame = 0;
@@ -181,6 +194,8 @@ export class Renderer {
 
     // A 1x1 black sky until the real catalogue arrives.
     this.skyTex = createHDRTexture(gl, new Float32Array([0, 0, 0]), 1, 1);
+
+    this.interiorLUT = this._buildInteriorLUT();
   }
 
   /**
@@ -191,6 +206,52 @@ export class Renderer {
     this.gl.deleteTexture(this.skyTex);
     this.skyTex = createHDRTexture(this.gl, map.data, map.width, map.height);
     this.resetAccumulation();
+  }
+
+  /**
+   * Bake the interior layer colours into a look-up table.
+   *
+   * One row per modelled body, 256 columns of normalised radius. Built from
+   * `astro/interior.js`, so the shader and the read-outs in the panel cannot
+   * disagree about where the core-mantle boundary is.
+   *
+   * @private
+   */
+  _buildInteriorLUT() {
+    const gl = this.gl;
+    const W = 256;
+    const H = 8;
+    const data = new Uint8Array(W * H * 4);
+    this.interiorRows = new Map();
+
+    let row = 0;
+    for (const [id, model] of Object.entries(INTERIORS)) {
+      if (row >= H) break;
+      this.interiorRows.set(id, row);
+      for (let i = 0; i < W; i++) {
+        const r = ((i + 0.5) / W) * model.radiusKm;
+        const layer = model.layers.find((l) => r >= l.inner && r <= l.outer)
+          || model.layers[model.layers.length - 1];
+        const o = (row * W + i) * 4;
+        data[o] = Math.round(layer.color[0] * 255);
+        data[o + 1] = Math.round(layer.color[1] * 255);
+        data[o + 2] = Math.round(layer.color[2] * 255);
+        data[o + 3] = 255;
+      }
+      row++;
+    }
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    // Nearest in the row direction so bodies never bleed into each other;
+    // linear across radius so a boundary is a clean edge rather than a stair.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return tex;
   }
 
   /**
@@ -588,6 +649,7 @@ export class Renderer {
       camera.forward[0].toFixed(6), camera.forward[1].toFixed(6), camera.forward[2].toFixed(6),
       camera.up[0].toFixed(6), camera.effectiveFov.toFixed(6),
       scene.jd.toFixed(9), this.bodyCount,
+      this.settings.cutBody ?? '-', this.settings.cutOpen.toFixed(3),
     ].join(',');
     if (viewKey !== this._lastViewKey && !opts.forceAccumulate) {
       this._accumFrames = 0;
@@ -654,9 +716,30 @@ export class Renderer {
     u4fv(gl, u.uRingRadii, this.ringRadii);
 
     bindTexture(gl, u.uBodies, this.bodyTex, 0);
+    // Cutaway. The plane is tilted between "straight at the camera" and "edge
+    // on": mostly facing the viewer, so the section is legible rather than
+    // foreshortened to a sliver, but angled enough that a crescent of the real
+    // surface stays in frame. Without the surface beside it, a cutaway is just
+    // a pie chart. Derived from the camera each frame, so orbiting the planet
+    // turns the section with you instead of hiding it.
+    const cutIdx = this.settings.cutBody != null && this.settings.cutOpen > 0
+      ? (bodyIndex.get(this.settings.cutBody) ?? -1)
+      : -1;
+    u1i(gl, u.uCutBody, cutIdx);
+    u1i(gl, u.uCutRow, this.interiorRows?.get(this.settings.cutBody) ?? 0);
+    u1f(gl, u.uCutOpen, cutIdx >= 0 ? this.settings.cutOpen : 0);
+    const cn = [
+      -camera.forward[0] + 0.85 * camera.right[0],
+      -camera.forward[1] + 0.85 * camera.right[1],
+      -camera.forward[2] + 0.85 * camera.right[2],
+    ];
+    const cnLen = Math.hypot(cn[0], cn[1], cn[2]) || 1;
+    u3f(gl, u.uCutNormal, cn[0] / cnLen, cn[1] / cnLen, cn[2] / cnLen);
+
     bindTexture(gl, u.uSky, this.skyTex, 1);
     bindTexture(gl, u.uRingLUT, this.ringLUT, 2);
     bindTexture(gl, u.uSurfaces, this.surfaces, 3, gl.TEXTURE_2D_ARRAY);
+    bindTexture(gl, u.uInteriorLUT, this.interiorLUT, 4);
     drawFullscreen(gl);
 
     // ---- pass 2: stars -----------------------------------------------------
@@ -1040,6 +1123,7 @@ export class Renderer {
     this.bloomChain?.forEach((rt) => rt.dispose());
     gl.deleteTexture(this.bodyTex);
     gl.deleteTexture(this.ringLUT);
+    gl.deleteTexture(this.interiorLUT);
     gl.deleteTexture(this.surfaces);
     gl.deleteTexture(this.skyTex);
     gl.deleteBuffer(this.lineVBO);

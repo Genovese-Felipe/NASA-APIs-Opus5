@@ -655,6 +655,42 @@ body.ui-hidden .panel,
 body.ui-hidden .timebar,
 body.ui-hidden #labels { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
 
+/* The one control that must survive hiding the interface, because it is what
+   brings the interface back. Present only in that state, faint enough not to
+   spoil a clean frame, and solid the moment it is hovered, focused or touched.
+   Sized to the 44px minimum target regardless of how small it looks. */
+.reveal-ui {
+  position: fixed;
+  inset-block-start: 12px;
+  inset-inline-end: 12px;
+  z-index: 90;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: .35;
+  transition: opacity .2s ease, color .2s ease;
+}
+body.ui-hidden .reveal-ui { display: inline-flex; }
+.reveal-ui:hover,
+.reveal-ui:focus-visible { opacity: 1; color: var(--ink); }
+/* A pointer that cannot hover is a pointer that cannot discover a faint
+   control, so on touch it simply stays legible. */
+@media (hover: none) {
+  .reveal-ui { opacity: .85; color: var(--ink); }
+}
+
 /* --- noscript ------------------------------------------------------------ */
 .noscript { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; padding: 24px; background: var(--bg); z-index: 200; }
 .noscript a { color: var(--accent); }

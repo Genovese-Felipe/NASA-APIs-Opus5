@@ -23,8 +23,24 @@
  * @module audio/engine
  */
 
-/** Just-intonation ratios used for the drone's partials. */
-const PARTIALS = [1, 1.5, 2, 3, 4.5, 6, 8];
+/**
+ * The drone's partials, as just-intonation ratios.
+ *
+ * Three, not eight, and all sine.
+ *
+ * The first version stacked eight partials up to the eighth harmonic and drove
+ * the upper ones with triangle waves. Triangle at 55 Hz puts significant energy
+ * on every odd harmonic well past 2 kHz; eight detuned copies of that, summed
+ * and then lowpassed at 1.2 kHz, is a buzz. Add a six-second noise loop
+ * underneath — short enough that the ear locks onto the loop point within about
+ * a minute — and the result was reported, accurately, as noisy and repetitive.
+ *
+ * A fifth and an octave over a sine fundamental is a spectrum with nothing in
+ * it to grate: no odd-harmonic series, no beating above the low midrange,
+ * nothing that rewards paying attention to it. Ambient sound in an application
+ * you look at for an hour has to survive being ignored.
+ */
+const PARTIALS = [1, 1.5, 2];
 
 export class SoundEngine {
   constructor() {
@@ -138,14 +154,18 @@ export class SoundEngine {
     // Two octaves down from Mercury to the Kuiper Belt.
     const octave = Math.log2(Math.max(state.distanceAu, 0.2) / 0.4) / 6;
     const fundamental = 55 * Math.pow(2, -Math.min(octave, 2));
-    const brightness = 300 + 2600 * Math.pow(Math.min(state.irradiance, 4), 0.35);
+    // A far narrower range than before: 260 Hz at Neptune to 900 Hz at
+    // Mercury. The old sweep ran to 2.9 kHz, and moving the corner of a
+    // resonant filter across the presence region is audible as a whistle
+    // whenever the camera moves.
+    const brightness = 260 + 640 * Math.pow(Math.min(state.irradiance, 4), 0.35);
 
     for (const v of this._voices) {
       v.osc.frequency.setTargetAtTime(fundamental * v.ratio, now, 1.5);
     }
     this._filter?.frequency.setTargetAtTime(brightness, now, 1.2);
     if (this._noiseGain) {
-      this._noiseGain.gain.setTargetAtTime(0.012 + 0.05 * (state.inAtmosphere || 0), now, 0.8);
+      this._noiseGain.gain.setTargetAtTime(0.006 + 0.02 * (state.inAtmosphere || 0), now, 0.8);
     }
   }
 
@@ -155,33 +175,48 @@ export class SoundEngine {
     const now = ctx.currentTime;
 
     this._ambienceGain = ctx.createGain();
-    this._ambienceGain.gain.value = this.levels.ambience * 0.22;
+    // A third of what it was. This is a bed, not a part.
+    this._ambienceGain.gain.value = this.levels.ambience * 0.075;
     this._filter = ctx.createBiquadFilter();
     this._filter.type = 'lowpass';
-    this._filter.frequency.value = 1200;
-    this._filter.Q.value = 0.6;
-    this._ambienceGain.connect(this._filter).connect(this.master);
+    this._filter.frequency.value = 700;
+    // Q below 0.707 is gently overdamped: no resonant peak at the corner, which
+    // is what made the old filter sweep audible as a whistle when the camera
+    // moved between planets.
+    this._filter.Q.value = 0.5;
+    // Nothing below 35 Hz survives. It is inaudible on every laptop speaker,
+    // it eats headroom, and on headphones it is felt rather than heard, which
+    // is the definition of fatiguing.
+    this._rumbleCut = ctx.createBiquadFilter();
+    this._rumbleCut.type = 'highpass';
+    this._rumbleCut.frequency.value = 35;
+    this._ambienceGain.connect(this._filter).connect(this._rumbleCut).connect(this.master);
 
     for (let i = 0; i < PARTIALS.length; i++) {
       const ratio = PARTIALS[i];
       const osc = ctx.createOscillator();
-      osc.type = i === 0 ? 'sine' : 'triangle';
+      // Sine only. See the note on PARTIALS.
+      osc.type = 'sine';
       osc.frequency.value = 55 * ratio;
 
       const gain = ctx.createGain();
-      // Higher partials quieter, following roughly 1/n as a natural spectrum.
-      gain.gain.value = 0.5 / (1 + ratio * 1.6);
+      // Steeper than 1/n, so the fundamental carries the sound and the upper
+      // partials only colour it.
+      gain.gain.value = 0.42 / (1 + ratio * ratio);
 
       // Each partial breathes on its own slow cycle, so the drone never
       // repeats audibly — the periods are mutually irrational.
       const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.017 + i * 0.0113;
+      // Mutually irrational periods (roughly 59 s, 88 s, 139 s), so the sum
+      // never returns to the same state and there is no cycle to notice.
+      lfo.frequency.value = 0.0169 + i * 0.00744;
       const lfoGain = ctx.createGain();
-      lfoGain.gain.value = gain.gain.value * 0.6;
+      lfoGain.gain.value = gain.gain.value * 0.45;
       lfo.connect(lfoGain).connect(gain.gain);
 
-      // A few cents of detune per partial thickens the sound.
-      osc.detune.value = (i % 2 ? 1 : -1) * (3 + i * 1.7);
+      // Two cents at most. The old detune reached eighteen cents on the top
+      // partial, which is a beat fast enough to hear as roughness.
+      osc.detune.value = (i % 2 ? 1 : -1) * (1.5 + i * 0.5);
 
       osc.connect(gain).connect(this._ambienceGain);
       osc.start(now);
@@ -189,19 +224,38 @@ export class SoundEngine {
       this._voices.push({ osc, gain, lfo, ratio });
     }
 
-    // Filtered pink-ish noise: the "vacuum" bed.
+    // The bed underneath.
+    //
+    // Thirty seconds rather than six, and lowpassed rather than bandpassed.
+    // A bandpass at 420 Hz with a low Q is a wide band centred exactly where
+    // the ear is most sensitive, which is why it read as hiss; a 240 Hz
+    // lowpass leaves a soft rush with no top end at all. Thirty seconds is
+    // long enough that the loop point falls below what anyone tracks.
     const noise = ctx.createBufferSource();
-    noise.buffer = this._makeNoiseBuffer(6);
+    noise.buffer = this._makeNoiseBuffer(30);
     noise.loop = true;
     const noiseFilter = ctx.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 420;
-    noiseFilter.Q.value = 0.35;
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = 240;
+    noiseFilter.Q.value = 0.5;
     this._noiseGain = ctx.createGain();
-    this._noiseGain.gain.value = 0.012;
-    noise.connect(noiseFilter).connect(this._noiseGain).connect(this.master);
+    this._noiseGain.gain.value = 0.006;
+
+    // A second, much slower drift on the noise filter, on a period that shares
+    // no factor with any of the partial LFOs. Between them there is no repeat
+    // to lock onto.
+    const drift = ctx.createOscillator();
+    drift.frequency.value = 0.0083;
+    const driftGain = ctx.createGain();
+    driftGain.gain.value = 70;
+    drift.connect(driftGain).connect(noiseFilter.frequency);
+    drift.start(now);
+    this._drift = drift;
+
+    noise.connect(noiseFilter).connect(this._noiseGain).connect(this._rumbleCut);
     noise.start(now);
     this._noise = noise;
+    this._noiseFilter = noiseFilter;
   }
 
   /**
@@ -383,6 +437,19 @@ export class SoundEngine {
       data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
       b6 = white * 0.115926;
     }
+
+    // Cross-fade the tail into the head so the loop seam is continuous. A
+    // buffer generated this way starts at silence and ends mid-signal, and the
+    // resulting step is a click once every loop — a regular artefact, which is
+    // exactly the kind the ear finds and then cannot stop hearing. An
+    // equal-power fade keeps the perceived level flat across the join.
+    const fade = Math.min(Math.floor(rate * 0.25), Math.floor(length / 4));
+    for (let i = 0; i < fade; i++) {
+      const t = i / fade;
+      const a = Math.cos((t * Math.PI) / 2);
+      const b = Math.sin((t * Math.PI) / 2);
+      data[i] = data[i] * b + data[length - fade + i] * a;
+    }
     return buffer;
   }
 
@@ -396,6 +463,7 @@ export class SoundEngine {
 
   /** Release everything. */
   dispose() {
+    try { this._drift?.stop(); } catch { /* already stopped */ }
     this._stopSonification();
     for (const v of this._voices) {
       try {

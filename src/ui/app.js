@@ -18,7 +18,7 @@ import { MOONS } from '../astro/moons.js';
 import { loadStarCatalogue, buildSkyMap, buildStarPoints } from '../astro/stars.js';
 import { SimClock, TIME_RATES, dateToJD, jdToISO } from '../astro/time.js';
 import { AU_KM } from '../astro/constants.js';
-import { loadSurfaceTextures } from '../data/imagery.js';
+import { loadSurfaceTextures, loadBaseMaps } from '../data/imagery.js';
 import { getNEOFeed, browseNEOs, neosToSmallBodies } from '../data/nasa.js';
 import { summarise, onHealthChange } from '../data/health.js';
 import { SoundEngine } from '../audio/engine.js';
@@ -217,6 +217,15 @@ export class App {
 
   /** @private */
   async _loadTextures() {
+    // The committed basemaps first, and awaited: they are local, they are
+    // small, and until they are up the planet is procedural noise. Only then
+    // does the streamed pyramid start, which may take seconds or never finish.
+    try {
+      await loadBaseMaps(this.renderer);
+      this.renderer.resetAccumulation();
+    } catch {
+      /* procedural surfaces remain */
+    }
     try {
       await loadSurfaceTextures(this.renderer, {
         onState: (key, state) => {
@@ -354,6 +363,7 @@ export class App {
     d.btnLanguage.addEventListener('click', () => this._openLanguage());
     d.btnSearch.addEventListener('click', () => this._openSearch());
     d.btnHideUI.addEventListener('click', () => this.toggleUI());
+    d.btnShowUI?.addEventListener('click', () => this.toggleUI(false));
     d.focusChip.addEventListener('click', () => this.setPanel('body'));
 
     // --- intro -------------------------------------------------------------
@@ -411,6 +421,9 @@ export class App {
       case 'n': case 'N': this.dom.btnNow.click(); break;
       case 'f': case 'F': this.toggleFreeFlight(); break;
       case 'h': case 'H': this.toggleUI(); break;
+      // Escape only ever brings the interface back; it must not be a second way
+      // to lose it, or a stray press while reading a panel hides everything.
+      case 'Escape': if (this.uiHidden) this.toggleUI(false); break;
       case 'o': case 'O':
         this.renderer.settings.showOrbits = !this.renderer.settings.showOrbits;
         this.renderer.resetAccumulation();
@@ -486,10 +499,28 @@ export class App {
     this._refreshPanel();
   }
 
-  /** Toggle interface visibility. */
-  toggleUI() {
-    this.uiHidden = !this.uiHidden;
+  /**
+   * Toggle interface visibility.
+   * @param {boolean} [force] Set explicitly rather than toggling.
+   */
+  toggleUI(force) {
+    this.uiHidden = force === undefined ? !this.uiHidden : force;
     document.body.classList.toggle('ui-hidden', this.uiHidden);
+
+    if (this.uiHidden) {
+      // Say how to get back before the thing that says it disappears. Hiding
+      // the interface used to be a one-way door on any device without a
+      // keyboard, and even with one you had to already know which key.
+      this.toast(t('keys.hiddenHint'), 5000);
+      this.announce(t('keys.hiddenHint'));
+      // Move focus somewhere that still exists, or it is left on a control
+      // with pointer-events: none and the tab order starts from nowhere.
+      if (this.dom.btnShowUI && this.dom.topbar?.contains(document.activeElement)) {
+        this.dom.btnShowUI.focus();
+      }
+    } else if (this.dom.btnHideUI && document.activeElement === this.dom.btnShowUI) {
+      this.dom.btnHideUI.focus();
+    }
   }
 
   /** Toggle six-degree-of-freedom flight. */

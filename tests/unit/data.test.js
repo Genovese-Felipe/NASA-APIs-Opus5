@@ -449,14 +449,66 @@ describe('committed snapshots', () => {
 });
 
 describe('imagery', () => {
-  test('picks the pyramid level whose width matches the target', () => {
-    // Level 0 is two tiles wide, and each level doubles.
-    assert.equal(imagery.levelForWidth(1024, 512), 0);
-    assert.equal(imagery.levelForWidth(2048, 512), 1);
-    assert.equal(imagery.levelForWidth(4096, 512), 2);
-    assert.equal(imagery.levelForWidth(512, 256), 0);
-    assert.equal(imagery.levelForWidth(2048, 256), 2);
-    assert.equal(imagery.levelForWidth(4096, 256), 3);
+  // The matrix dimensions published by the services themselves, transcribed
+  // from their WMTSCapabilities. These are the numbers that matter: assuming a
+  // 2^(z+1) x 2^z grid instead is what made Earth render as procedural noise,
+  // because the wrong column count does not merely miss tiles, it puts the
+  // tiles that do load at the wrong longitudes.
+  const PUBLISHED = {
+    // GIBS, every matrix set (250m, 500m, 1km), 512 px tiles.
+    gibs: { world0: 640, tileSize: 512, matrices: [[2, 1], [3, 2], [5, 3], [10, 5], [20, 10], [40, 20], [80, 40], [160, 80]] },
+    // NASA Trek, default028mm, 256 px tiles.
+    trek: { world0: 512, tileSize: 256, matrices: [[2, 1], [4, 2], [8, 4], [16, 8], [32, 16]] },
+  };
+
+  test('reproduces the tile matrices the services actually publish', () => {
+    for (const [service, spec] of Object.entries(PUBLISHED)) {
+      const layer = { world0: spec.world0, tileSize: spec.tileSize };
+      spec.matrices.forEach(([cols, rows], z) => {
+        const got = imagery.pyramidAt(layer, z);
+        assert.equal(got.cols, cols, `${service} level ${z} columns`);
+        assert.equal(got.rows, rows, `${service} level ${z} rows`);
+      });
+    }
+  });
+
+  test('the globe stays 2:1 at every level even when the matrix is not', () => {
+    // A 3x2 matrix of 512 px tiles is 1.5:1, but the world inside it is not:
+    // the last column and row hang off the edge. Confusing the two is what
+    // stretched the mosaic.
+    for (const spec of Object.values(PUBLISHED)) {
+      const layer = { world0: spec.world0, tileSize: spec.tileSize };
+      for (let z = 0; z < spec.matrices.length; z++) {
+        const { worldWidth, worldHeight } = imagery.pyramidAt(layer, z);
+        assert.equal(worldWidth, worldHeight * 2, `level ${z} is not 2:1`);
+      }
+    }
+  });
+
+  test('every real layer declares the geometry of its own service', () => {
+    for (const [id, layer] of Object.entries(imagery.LAYERS)) {
+      const expected = layer.tileSize === 512 ? 640 : 512;
+      assert.equal(layer.world0, expected, `${id} world0`);
+    }
+  });
+
+  test('picks a level at least as wide as asked for, never narrower', () => {
+    for (const spec of Object.values(PUBLISHED)) {
+      const layer = { world0: spec.world0, tileSize: spec.tileSize };
+      for (const want of [512, 1024, 2048, 4096, 8192]) {
+        const z = imagery.levelForWidth(want, layer);
+        assert.ok(
+          imagery.pyramidAt(layer, z).worldWidth >= want,
+          `asked for ${want}, got ${imagery.pyramidAt(layer, z).worldWidth}`
+        );
+        if (z > 0) {
+          assert.ok(
+            imagery.pyramidAt(layer, z - 1).worldWidth < want,
+            `level ${z} is one deeper than necessary for ${want}`
+          );
+        }
+      }
+    }
   });
 
   test('every layer builds a plausible tile URL', () => {

@@ -45,6 +45,8 @@ const VIRTUAL_ORIGIN = 'https://orrery.local';
 const modules = new Map();
 /** @type {Map<string, string>} JSON path -> parsed content. */
 const jsonAssets = new Map();
+/** @type {Map<string, string>} Binary asset path -> data: URL. */
+const binaryAssets = new Map();
 
 /**
  * Resolve a relative specifier against an importing file.
@@ -192,6 +194,26 @@ async function buildLocales() {
  * Collect every JSON file under `src/` so the fetch shim can serve it.
  * @param {string} dir
  */
+async function collectBinary(dir, pattern) {
+  const { readdir } = await import('node:fs/promises');
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return; // nothing baked yet; the build is still valid, just less pretty
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() || !pattern.test(entry.name)) continue;
+    const full = resolve(dir, entry.name);
+    const bytes = await readFile(full);
+    const mime = entry.name.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    binaryAssets.set(
+      relative(ROOT, full).replace(/\\/g, '/'),
+      `data:${mime};base64,${bytes.toString('base64')}`
+    );
+  }
+}
+
 async function collectJson(dir) {
   const { readdir } = await import('node:fs/promises');
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -206,6 +228,11 @@ async function collectJson(dir) {
 async function main() {
   const entry = resolve(ROOT, 'src/main.js');
   await collectJson(resolve(ROOT, 'src'));
+
+  // The baked NASA basemaps. Without them the single-file build shows a
+  // procedural Earth, because an embedding host's Content-Security-Policy
+  // forbids reaching GIBS and there is no file beside the HTML to read.
+  await collectBinary(resolve(ROOT, 'assets/basemaps'), /\.(jpg|png)$/);
   await addModule(entry);
   const entryId = relative(ROOT, entry).replace(/\\/g, '/');
 
@@ -256,6 +283,10 @@ async function main() {
     .map(([k, v]) => `  ${JSON.stringify(k)}: ${v}`)
     .join(',\n');
 
+  const binarySource = [...binaryAssets.entries()]
+    .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+    .join(',\n');
+
   const runtime = `
 // --- module registry -------------------------------------------------------
 // A five-line replacement for the ES module loader. Each module is a function
@@ -277,6 +308,14 @@ function __req(id) {
 // --- inlined JSON ----------------------------------------------------------
 const __jsonData = {
 ${jsonSource}
+};
+
+// --- inlined binary assets -------------------------------------------------
+// Published as data: URLs rather than served through the fetch shim, because
+// an <img> or createImageBitmap wants a URL and a data: URL needs no request,
+// no blob and therefore no cooperation from a Content-Security-Policy.
+window.__ORRERY_ASSETS = {
+${binarySource}
 };
 
 // Every data file is addressed against a virtual origin that mirrors the
@@ -345,7 +384,7 @@ ${markup}
   await mkdir(dirname(OUT), { recursive: true });
   await writeFile(OUT, out);
   const kb = Math.round(out.length / 1024);
-  log(`Single-file build: ${relative(ROOT, OUT)} — ${kb} KB, ${modules.size} modules, ${jsonAssets.size} data files`);
+  log(`Single-file build: ${relative(ROOT, OUT)} — ${kb} KB, ${modules.size} modules, ${jsonAssets.size} data files, ${binaryAssets.size} images`);
 }
 
 main().catch((err) => {

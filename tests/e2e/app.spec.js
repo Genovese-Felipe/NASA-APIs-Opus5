@@ -569,6 +569,61 @@ test.describe('tours', () => {
   });
 });
 
+test.describe('hiding the interface', () => {
+  // Hiding the interface put pointer-events: none on the header, and the only
+  // control that un-hid it was in that header. On a desktop the H key still
+  // worked. On a phone there was no key to press and no button to press, so the
+  // only way back was to reload and lose the whole session.
+  test('can always be undone, including with no keyboard at all', async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: 420, height: 760 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const page = await context.newPage();
+    await page.route(EXTERNAL, (route) => route.abort());
+    await page.goto('/index.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.orrery?.running === true, null, { timeout: 150_000 });
+    await page.evaluate(() => document.getElementById('dlg-intro')?.close());
+
+    await page.locator('#btn-hide-ui').tap();
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(true);
+
+    // The way back must be visible, hittable, and big enough for a finger.
+    const reveal = page.locator('#btn-show-ui');
+    await expect(reveal).toBeVisible();
+    const box = await reveal.boundingBox();
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(await reveal.getAttribute('aria-label')).toBeTruthy();
+
+    await reveal.tap();
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(false);
+    await context.close();
+  });
+
+  test('Escape restores it but never causes it', async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press('h');
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(true);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(false);
+    // A stray Escape while reading a panel must not hide everything.
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(false);
+  });
+
+  test('keyboard focus follows the interface out and back', async ({ page }) => {
+    await boot(page);
+    await page.locator('#btn-hide-ui').focus();
+    await page.keyboard.press('Enter');
+    // Focus must not be left on a control that is now pointer-events: none,
+    // or the tab order restarts from the top of the document.
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-show-ui');
+    await page.keyboard.press('Enter');
+    expect(await page.evaluate(() => document.body.classList.contains('ui-hidden'))).toBe(false);
+  });
+});
+
 test.describe('single-file build', () => {
   // The single-file build exists to be embedded somewhere else, and every host
   // worth embedding in applies a Content-Security-Policy. That policy is the
