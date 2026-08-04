@@ -251,7 +251,14 @@ export class Renderer {
       this.ringRadii[s * 4] = inner / MM;
       this.ringRadii[s * 4 + 1] = outer / MM;
       this.ringRadii[s * 4 + 2] = bodyIndex.get(sys.bodyId) ?? -1;
-      this.ringRadii[s * 4 + 3] = 0;
+
+      // Area-weighted mean opacity, accumulated as the profile is built. The
+      // shader uses it for ringshine: how much light the system as a whole
+      // throws back onto its planet. Weighting by radius rather than by band
+      // count is what makes it an average over the ring's *area*, which is
+      // what a surface point below actually sees.
+      let sumA = 0;
+      let sumR = 0;
 
       for (let i = 0; i < RING_LUT_SIZE; i++) {
         const r = inner + ((i + 0.5) / RING_LUT_SIZE) * (outer - inner);
@@ -269,7 +276,11 @@ export class Renderer {
         }
         const o = (s * RING_LUT_SIZE + i) * 4;
         lut[o] = cr; lut[o + 1] = cg; lut[o + 2] = cb; lut[o + 3] = ca;
+        sumA += ca * r;
+        sumR += r;
       }
+
+      this.ringRadii[s * 4 + 3] = sumR > 0 ? sumA / sumR : 0;
     }
 
     gl.bindTexture(gl.TEXTURE_2D, this.ringLUT);

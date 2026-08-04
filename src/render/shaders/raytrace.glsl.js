@@ -97,7 +97,7 @@ uniform vec3  uSunPos;            // Mm, camera-relative
 uniform float uSunRadius;         // Mm
 uniform vec3  uSunColor;          // linear RGB * intensity
 
-uniform vec4  uRingRadii[MAX_RINGS];  // xy = inner/outer radius (Mm), z = body index, w = unused
+uniform vec4  uRingRadii[MAX_RINGS];  // xy = inner/outer radius (Mm), z = body index, w = mean opacity
 uniform int   uRingCount;
 
 uniform int   uScatterSteps;      // view-ray samples inside an atmosphere
@@ -715,12 +715,28 @@ vec3 shadeSurface(Hit hit, vec3 rd) {
   // Ringshine. Saturn's night side is not black: the sunlit rings hang overhead
   // and light it. Modelled as a broad disc source in the equatorial plane whose
   // strength falls with latitude, which is the shape the real effect has.
+  //
+  // Two things this has to get right, and originally did not.
+  //
+  // It must scale with what the rings actually reflect. rr.w carries the
+  // area-weighted mean opacity of the system, so Saturn's near-opaque B ring
+  // lights its planet and Jupiter's gossamer rings — optical depth of order
+  // 1e-6 — do not. Without that term a ring you cannot see still throws a
+  // bright band across the equator of the planet it orbits, which is what it
+  // was doing.
+  //
+  // And it must fall off as the rings get further away, not rise. A ring
+  // system whose mid-radius is twice the planet's subtends less sky from the
+  // surface, not more.
   if (b.ringIdx >= 0 && uShowRings > 0.5) {
     vec4 rr = uRingRadii[b.ringIdx];
-    float ringMid = (rr.x + rr.y) * 0.5;
-    float solid = saturate(sq(ringMid / max(length(hit.p - b.pos), 1e-6)) * 0.30);
+    float ringMid = max((rr.x + rr.y) * 0.5, 1e-6);
+    float solid = saturate(sq(b.radius / ringMid) * 3.0);
     float lat = abs(dot(N, b.axis));
-    direct += albedo * uSunColor * irr * solid * (1.0 - lat) * 0.10 * (1.0 - vis * 0.5);
+    // 0.18 is chosen so that Saturn — mean opacity 0.55, rings close in —
+    // lands on the same night-side brightness it had before the opacity term
+    // existed. Everything else falls out from there.
+    direct += albedo * uSunColor * irr * solid * rr.w * (1.0 - lat) * 0.18 * (1.0 - vis * 0.5);
   }
 
   // Night-side fill, expressed as a fraction of the local sunlight so it stays
@@ -791,9 +807,20 @@ void main() {
       float shadow = sunVisibility(p, -1);
       float irr = irradianceAt(length(uSunPos - p));
 
-      // Grazing incidence makes the rings optically thicker.
+      // Grazing incidence makes the rings optically thicker: the path through
+      // them goes as 1/cos of the angle to the normal.
+      //
+      // That factor is clamped, and not just for numerical comfort. The 1/cos
+      // law comes from modelling the ring as a plane of zero thickness, and it
+      // diverges. A real ring is a slab — Saturn's main rings are of order ten
+      // metres deep against a hundred thousand kilometres across — so once the
+      // ray is shallow enough to exit through the top or bottom face rather
+      // than the far side, the path length stops growing. Leaving it
+      // unclamped drives a near arc crossing in front of its planet to several
+      // times the planet's own brightness, with a hard edge where the ring
+      // ends. Five times the normal path is the cap.
       float cosInc = abs(dot(rd, pb.axis));
-      float alpha = 1.0 - pow(1.0 - s.a, 1.0 / max(cosInc, 0.06));
+      float alpha = 1.0 - pow(1.0 - s.a, 1.0 / max(cosInc, 0.2));
 
       vec3 ringCol = s.rgb * uSunColor * irr * shadow * phase * 0.32;
       // Translucency: unlit side of an optically thin ring still transmits.

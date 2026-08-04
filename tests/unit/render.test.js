@@ -544,6 +544,16 @@ describe('shader source', () => {
     assert.ok(source.includes('beacon * pointLike'), 'gate is not applied');
   });
 
+  test('ringshine is weighted by what the rings actually reflect', () => {
+    // rr.w is the system's area-weighted mean opacity. Without it, Jupiter's
+    // gossamer rings — optical depth of order 1e-6, and invisible — threw a
+    // bright band across the equator of the planet they orbit.
+    assert.ok(source.includes('solid * rr.w'), 'ringshine ignores ring opacity');
+    // And the falloff must be planet-radius over ring-radius, not the inverse:
+    // rings further out subtend less sky from the surface, not more.
+    assert.ok(source.includes('sq(b.radius / ringMid)'), 'ringshine falloff is inverted');
+  });
+
   test('the star pass projects without a view-projection matrix', () => {
     // Stars are at infinity: the translation column is meaningless, and pushing
     // a unit vector out to a large radius only to divide it out again throws
