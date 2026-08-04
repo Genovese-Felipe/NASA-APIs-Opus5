@@ -758,6 +758,12 @@ void main() {
     color = sampleSky(rd);
   }
 
+  // Coverage, written to alpha, is how much of this pixel is scene rather than
+  // sky. The star pass reads it back through the blender to decide how much of
+  // a star behind this pixel survives — solid for a planet, partial for a thin
+  // ring or a hazy limb. Nothing else consumes it.
+  float cover = hit.idx >= 0 ? 1.0 : 0.0;
+
   // --- rings -------------------------------------------------------------
   // Composited after the surface so a ring in front correctly veils the planet,
   // and a ring behind is correctly hidden by it.
@@ -793,6 +799,7 @@ void main() {
       // Translucency: unlit side of an optically thin ring still transmits.
       ringCol += s.rgb * uSunColor * irr * (1.0 - shadow) * 0.02;
       color = mix(color, ringCol, saturate(alpha));
+      cover = mix(cover, 1.0, saturate(alpha));
       bgT = t;
     }
   }
@@ -814,6 +821,8 @@ void main() {
       float tr;
       vec3 scat = atmosphere(ro, rd, tNear, tFar, b, i, tr);
       color = color * tr + scat;
+      // Whatever the atmosphere attenuated is no longer sky.
+      cover = 1.0 - (1.0 - cover) * tr;
     }
   }
 
@@ -837,11 +846,24 @@ void main() {
     if (R <= 0.0) continue;
     float dist = length(rp.xyz);
     if (dist < 1e-6) continue;
+    // Hidden behind something nearer: a moon on the far side of Saturn must not
+    // shine through it. bgT is whatever the ray actually struck, so comparing
+    // against the body's near surface is enough.
+    if (dist - R > bgT) continue;
+
     float angRad = R / dist;
     // Fade the point in only as the disc shrinks below a couple of pixels, so
     // it never double-counts a resolved body.
     float small = 1.0 - smoothstep(0.6 * uPixelAngle, 2.4 * uPixelAngle, angRad);
     if (small <= 0.001) continue;
+
+    // The beacon is an honest lie told about objects too small to resolve, and
+    // it has to stop being told well before they become resolvable. A moon at
+    // one pixel is already delivering plenty of real flux; boosting it to
+    // stellar units on top turns it into a searchlight the size of the planet
+    // it orbits. Below a twentieth of a pixel there is no real flux to speak
+    // of, and the beacon is the only thing keeping Neptune on the screen.
+    float pointLike = 1.0 - smoothstep(0.05 * uPixelAngle, 0.5 * uPixelAngle, angRad);
 
     vec3 dir = rp.xyz / dist;
     float sep = acos(clamp(dot(rd, dir), -1.0, 1.0));
@@ -882,7 +904,7 @@ void main() {
     // destroying the buffer.
     float physical = flux / max(sq(uPixelAngle), 1e-18);
     float beacon = min(flux * uBeaconGain, 2500.0);
-    color += tint * (physical * uPointGain + beacon) * psf * small;
+    color += tint * (physical * uPointGain + beacon * pointLike) * psf * small;
   }
 
   // --- solar corona ------------------------------------------------------
@@ -919,7 +941,7 @@ void main() {
   // accumulated exposure.
   color = clamp(color, vec3(0.0), vec3(30000.0));
   if (any(isnan(color))) color = vec3(0.0);
-  fragColor = vec4(color, 1.0);
+  fragColor = vec4(color, saturate(cover));
 }
 `;
 }

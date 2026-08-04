@@ -25,7 +25,7 @@ import {
   dateToJD, jdToDate, centuriesSinceJ2000, gmst, norm2pi, normDeg180, SimClock, TIME_RATES,
 } from '../../src/astro/time.js';
 import { AU_KM, JD_J2000, OBLIQUITY_J2000, GM_SUN, C_KM_S } from '../../src/astro/constants.js';
-import { bvToTemperature, blackbodyRGB, magnitudeToFlux, raDecToEclipticVec } from '../../src/astro/stars.js';
+import { bvToTemperature, blackbodyRGB, magnitudeToFlux, raDecToEclipticVec, buildStarPoints, buildSkyMap } from '../../src/astro/stars.js';
 
 const DEG = Math.PI / 180;
 
@@ -526,6 +526,47 @@ describe('star colour science', () => {
     // The north celestial pole sits at the obliquity from the ecliptic pole.
     const ncp = raDecToEclipticVec(0, 90);
     assert.ok(Math.abs(ncp[2] - Math.cos(OBLIQUITY_J2000)) < 1e-9, `z=${ncp[2]}`);
+  });
+
+  test('point buffers are unit directions with the same flux as the sky map', () => {
+    const cat = {
+      ra: [0, 101.287, 279.234],
+      dec: [0, -16.716, 38.784],
+      mag: [4.0, -1.46, 0.03],   // an ordinary star, Sirius, Vega
+      bv: [0.5, 0.0, 0.0],
+    };
+    const pts = buildStarPoints(cat);
+    assert.equal(pts.count, 3);
+    assert.equal(pts.dir.length, 9);
+    assert.equal(pts.tint.length, 12);
+
+    for (let i = 0; i < pts.count; i++) {
+      const len = Math.hypot(pts.dir[i * 3], pts.dir[i * 3 + 1], pts.dir[i * 3 + 2]);
+      assert.ok(Math.abs(len - 1) < 1e-6, `star ${i} direction is not a unit vector`);
+      assert.ok(pts.tint[i * 4 + 3] > 0, `star ${i} has no flux`);
+    }
+
+    // Faintest first, so the brightest star is the last additive contribution
+    // when several land on one pixel.
+    const flux = [0, 1, 2].map((i) => pts.tint[i * 4 + 3]);
+    assert.ok(flux[0] < flux[1] && flux[1] < flux[2], 'not sorted faintest-first');
+
+    // Same scale as the texture path, so switching between them does not change
+    // how bright the sky is. The tolerance is float32: these end up in a vertex
+    // buffer, not a double.
+    assert.ok(Math.abs(flux[2] / (magnitudeToFlux(-1.46) * 15) - 1) < 1e-6);
+  });
+
+  test('the sky map holds the Milky Way but not the stars by default', () => {
+    const cat = { ra: [0], dec: [0], mag: [-10], bv: [0] };  // absurdly bright
+    const bare = buildSkyMap(cat, { width: 64, height: 32, milkyWay: 0 });
+    assert.ok(bare.data.every((v) => v === 0), 'stars leaked into the texture');
+
+    const withStars = buildSkyMap(cat, { width: 64, height: 32, milkyWay: 0, stars: true });
+    assert.ok(withStars.data.some((v) => v > 0), 'opt-in star splatting is broken');
+
+    const galaxy = buildSkyMap(cat, { width: 64, height: 32, milkyWay: 1 });
+    assert.ok(galaxy.data.some((v) => v > 0), 'the Milky Way should still be painted');
   });
 });
 

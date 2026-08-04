@@ -19,7 +19,7 @@ import { EXPORT_SIZES, EXPORT_FORMATS, formatBytes } from '../../src/render/expo
 import { CANDIDATES, scaleBitrate, FPS_OPTIONS, BITRATE_PRESETS } from '../../src/render/recorder.js';
 import { buildRaytraceShader } from '../../src/render/shaders/raytrace.glsl.js';
 import { MATH, NOISE, COLOR, INTERSECT, SOFT_SHADOW } from '../../src/render/shaders/common.glsl.js';
-import { ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS } from '../../src/render/shaders/post.glsl.js';
+import { ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS, STAR_VS, STAR_FS } from '../../src/render/shaders/post.glsl.js';
 import { buildScene } from '../../src/astro/ephemeris.js';
 import { AU_KM } from '../../src/astro/constants.js';
 
@@ -521,9 +521,61 @@ describe('shader source', () => {
     assert.ok(source.includes('isnan(color)'), 'NaNs must be caught');
   });
 
+  test('writes scene coverage to alpha for the star pass to blend against', () => {
+    // The star pass occludes through the fixed-function blender, so a constant
+    // alpha of 1.0 here would hide every star in the sky and a constant 0.0
+    // would draw them through the planets.
+    assert.ok(source.includes('saturate(cover)'), 'alpha must carry coverage');
+    assert.ok(!/fragColor = vec4\(color, 1\.0\)/.test(source), 'alpha must not be constant');
+    assert.ok(source.includes('cover = mix(cover, 1.0'), 'rings must contribute coverage');
+    assert.ok(source.includes('cover = 1.0 - (1.0 - cover) * tr'), 'atmospheres must too');
+  });
+
+  test('sub-pixel bodies are hidden behind nearer geometry', () => {
+    // Without this, a moon on the far side of its planet shines through it.
+    assert.ok(source.includes('if (dist - R > bgT) continue;'));
+  });
+
+  test('the beacon boost is gated to genuinely unresolved bodies', () => {
+    // The beacon is calibrated in stellar units. Applied to a body that is
+    // about to become resolvable it is several hundred times too bright, and
+    // bloom turns it into a searchlight the size of the planet it orbits.
+    assert.ok(source.includes('pointLike'), 'gate is missing');
+    assert.ok(source.includes('beacon * pointLike'), 'gate is not applied');
+  });
+
+  test('the star pass projects without a view-projection matrix', () => {
+    // Stars are at infinity: the translation column is meaningless, and pushing
+    // a unit vector out to a large radius only to divide it out again throws
+    // away mantissa.
+    assert.ok(!STAR_VS.includes('uViewProj'));
+    assert.ok(STAR_VS.includes('uCamFwd') && STAR_VS.includes('uTanHalfFov'));
+  });
+
+  test('the star pass culls what is behind the camera', () => {
+    // Dividing by a non-positive z projects a star behind you onto the screen.
+    assert.ok(/z <= 1e-5/.test(STAR_VS), 'no guard on the forward component');
+  });
+
+  test('star sprite size does not follow the exposure gain', () => {
+    // uGain carries a 1/exposure factor that swings four orders of magnitude.
+    // Sizing from it inflates every star into a disc whenever exposure closes,
+    // which is exactly when you least want it — approaching the Sun.
+    const sizeLine = STAR_VS.split('\n').find((l) => l.includes('gl_PointSize = clamp'));
+    assert.ok(sizeLine, 'point size is not computed');
+    assert.ok(!sizeLine.includes('uGain'), 'point size depends on the exposure gain');
+    assert.ok(sizeLine.includes('aTint.a'), 'point size should follow the star flux');
+  });
+
+  test('star sprites leave the coverage mask alone', () => {
+    // Several stars can land on one pixel. If each wrote alpha, the second
+    // would be occluded by the first.
+    assert.ok(/fragColor = vec4\(vColor \* g, 0\.0\)/.test(STAR_FS));
+  });
+
   test('post-processing shaders are all valid GLSL ES 3.00 headers', () => {
     for (const [name, src] of Object.entries({
-      ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS,
+      ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS, STAR_VS, STAR_FS,
     })) {
       assert.ok(src.startsWith('#version 300 es'), `${name} version`);
       assert.ok(src.includes('precision'), `${name} precision`);
@@ -542,7 +594,7 @@ describe('shader source', () => {
   test('no template literal is accidentally terminated', () => {
     // Backticks inside a GLSL comment end the JavaScript template string, which
     // is a syntax error that only shows up at import time.
-    for (const src of [source, ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS]) {
+    for (const src of [source, ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS, STAR_VS, STAR_FS]) {
       assert.ok(!src.includes('`'), 'shader source contains a backtick');
     }
   });

@@ -23,12 +23,20 @@ Every image is rendered by the application itself, by
 `tools/capture-screenshots.mjs`, at a stated date and camera position. They are
 not mock-ups. `docs/images/manifest.json` records the exact parameters of each.
 
+They are also rendered **with all network access blocked**, which is worth
+saying because it changes what you are looking at. Earth, Mars, the Moon and
+Mercury are normally textured from GIBS and NASA Trek tile pyramids; with
+nothing to fetch, the shader falls back to procedural surfaces. So these are
+honest pictures of the geometry, the lighting and the atmospheres, and honest
+pictures of what the application looks like offline — but the real Blue Marble
+and the real Viking mosaic only appear when you open it in a browser.
+
 | | |
 |---|---|
 | ![Saturn](images/saturn.jpg) | ![Jupiter](images/jupiter.jpg) |
 | **Saturn.** The ring shadow on the cloud tops and the planet's shadow on the rings are the same occlusion term, evaluated in both directions. The Cassini Division is a low-opacity row in the ring table, not a texture. | **Jupiter.** The bands are warped in longitude only, which is what makes them shear rather than smear — the cheapest convincing model of a zonal wind. Any moon between the Sun and the disc casts a real shadow on it. |
 | ![Mars](images/mars.jpg) | ![The Sun](images/sun.jpg) |
-| **Mars.** Surface imagery is the Viking MDIM 2.1 colour mosaic from NASA Trek, stitched from WMTS tiles at load time. The thin atmosphere uses Mars's own Rayleigh coefficients, which is why the limb is dusty rather than blue. | **The Sun.** Limb darkening is the quadratic law, 1 − 0.47(1−μ) − 0.23(1−μ)²; the corona is a separate radial term outside the disc. Exposure closes by a factor of fifty when the Sun fills the frame, exactly as a camera's would. |
+| **Mars.** The thin atmosphere uses Mars's own Rayleigh coefficients, which is why the limb is dusty rather than blue. In a browser the surface is the Viking MDIM 2.1 colour mosaic from NASA Trek, stitched from WMTS tiles at load time; here it is the procedural fallback. | **The Sun.** Limb darkening is the quadratic law, 1 − 0.47(1−μ) − 0.23(1−μ)²; the corona is a separate radial term outside the disc. The exposure is metered on how much of the frame the disc fills, so it closes by a factor of thirty as you approach — exactly as a camera's would. |
 
 ---
 

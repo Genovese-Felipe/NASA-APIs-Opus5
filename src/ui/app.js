@@ -15,7 +15,7 @@ import { QUALITY_PRESETS, QUALITY_BY_ID } from '../render/quality.js';
 import { buildScene, addSmallBodies } from '../astro/ephemeris.js';
 import { RING_SYSTEMS, BODIES } from '../astro/planets.js';
 import { MOONS } from '../astro/moons.js';
-import { loadStarCatalogue, buildSkyMap } from '../astro/stars.js';
+import { loadStarCatalogue, buildSkyMap, buildStarPoints } from '../astro/stars.js';
 import { SimClock, TIME_RATES, dateToJD, jdToISO } from '../astro/time.js';
 import { AU_KM } from '../astro/constants.js';
 import { loadSurfaceTextures } from '../data/imagery.js';
@@ -87,10 +87,16 @@ export class App {
     // --- star field ---------------------------------------------------------
     // Built on the main thread because it is a one-off cost of well under a
     // second and moving it to a worker would mean transferring 64 MB back.
+    //
+    // Two products from one catalogue: the sky texture carries the Milky Way,
+    // which is diffuse and low-frequency and so loses nothing to a texture's
+    // fixed angular resolution, and the point buffers carry the stars, which
+    // lose everything to it.
     const catalogue = await loadStarCatalogue();
     this.starCatalogue = catalogue;
     const skySize = this.renderer.quality.surfaceTextureSize >= 4096 ? 4096 : 2048;
     this.renderer.setSkyMap(buildSkyMap(catalogue, { width: skySize, height: skySize / 2 }));
+    this.renderer.setStars(buildStarPoints(catalogue));
 
     onProgress(0.55, 'app.loadingData');
 

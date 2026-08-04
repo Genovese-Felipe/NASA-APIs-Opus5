@@ -239,6 +239,107 @@ void main() {
 }`;
 
 /**
+ * Star pass: the Bright Star Catalogue as point sprites.
+ *
+ * Stars are drawn rather than sampled from the sky texture because a texture
+ * has a fixed angular resolution and the camera does not — see the note in
+ * astro/stars.js. A point sprite is the same two pixels across whether the
+ * field of view is 80 degrees or 0.8, which is what a star should be.
+ *
+ * The direction is projected by hand instead of going through a view-projection
+ * matrix: the star is at infinity, so the translation column is meaningless and
+ * multiplying a unit vector by a large radius only to divide it out again
+ * throws away mantissa for nothing.
+ *
+ * Occlusion is the fixed-function blender's job. The ray tracer writes coverage
+ * into destination alpha, and this pass is drawn with a source factor of
+ * ONE_MINUS_DST_ALPHA, so a star behind Jupiter contributes exactly zero and a
+ * star behind Saturn's C ring contributes what the ring lets through. No depth
+ * buffer, no sorting.
+ */
+export const STAR_VS = /* glsl */ `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aDir;      // unit vector, ecliptic frame
+layout(location = 1) in vec4 aTint;     // rgb = blackbody colour, a = flux
+
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform vec3 uCamFwd;
+uniform float uTanHalfFov;
+uniform float uAspect;
+uniform vec2 uJitter;                   // sub-pixel, matched to the ray tracer
+uniform vec2 uResolution;               // full frame, pixels
+uniform vec2 uTileOrigin;               // pixels
+uniform vec2 uTileSize;                 // pixels
+uniform float uGain;
+uniform float uSizeScale;               // device pixels per rendered pixel
+uniform float uSizeMax;
+
+out vec3 vColor;
+
+void main() {
+  float z = dot(aDir, uCamFwd);
+  // Behind the camera, or on the plane through it: park the vertex outside the
+  // clip volume. Dividing by z there would produce a garbage position that can
+  // still land on screen.
+  if (z <= 1e-5) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vColor = vec3(0.0);
+    return;
+  }
+
+  float x = dot(aDir, uCamRight) / (z * uTanHalfFov * uAspect);
+  float y = dot(aDir, uCamUp) / (z * uTanHalfFov);
+
+  // Full-frame pixel coordinates, jittered exactly as the ray tracer jitters,
+  // so accumulation antialiases the points instead of fighting them.
+  vec2 pix = (vec2(x, y) * 0.5 + 0.5) * uResolution + uJitter;
+  vec2 ndc = ((pix - uTileOrigin) / uTileSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc, 0.0, 1.0);
+
+  vColor = aTint.rgb * aTint.a * uGain;
+
+  // Bright stars are drawn slightly larger, which is what a real optical system
+  // does — the core saturates and the wings rise above the noise. The growth is
+  // logarithmic, so Sirius is about three times Vega's diameter, not 100.
+  //
+  // Sized from the star's own flux, deliberately, and NOT from the gain. The
+  // gain carries a 1/exposure factor that swings by four orders of magnitude
+  // between a wide system view and a close approach to the Sun; folding that
+  // into the size makes every star inflate into a disc the moment the exposure
+  // closes. Apparent size is a property of the star and the optics, not of how
+  // the shot is metered.
+  //
+  // The quad is deliberately wider than the star should look. The visible core
+  // is set by uFalloff and comes out near 1.5 pixels for the faintest stars;
+  // the extra width is what the Gaussian needs in order to antialias, and what
+  // the sub-pixel jitter needs in order to average into a round point rather
+  // than a hard square. Too narrow and a rich field turns into aliased blocks;
+  // too wide and it turns into confetti, which is the failure mode this whole
+  // pass exists to avoid.
+  gl_PointSize = clamp((2.0 + 0.50 * log(1.0 + aTint.a * 40.0)) * uSizeScale, 2.0, uSizeMax);
+}`;
+
+export const STAR_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vColor;
+out vec4 fragColor;
+uniform float uFalloff;
+
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(p, p);
+  if (r2 > 1.0) discard;
+  // Gaussian core normalised so the total energy is independent of the sprite
+  // size: a bigger sprite spreads the same flux further rather than adding any.
+  float g = exp(-r2 * uFalloff) * uFalloff * 0.32;
+  // Alpha stays zero. Coverage belongs to the ray tracer; a star must not make
+  // the pixel behind it any more opaque than the geometry already did.
+  fragColor = vec4(vColor * g, 0.0);
+}`;
+
+/**
  * Vector overlay pass: orbit paths, grids, and selection rings.
  *
  * Drawn as real geometry (line strips) into the HDR buffer before tone mapping

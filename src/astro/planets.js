@@ -277,14 +277,36 @@ export function bodyOrientation(id, jd, obliquity) {
 
 /**
  * Ring systems. Radii are measured from the planet's centre, in kilometres.
+ *
+ * ON `opacity`, AND WHERE IT DEPARTS FROM PHYSICS
+ *
+ * Radii are published values. Opacity is not: it is a rendering quantity, and
+ * for three of the four systems it has to be, because the true normal optical
+ * depths span eight orders of magnitude and four of them are invisible.
+ *
+ * Saturn is honest — its B ring really is close to opaque and its C ring really
+ * is a fifth as thick, so those numbers are near the measured ones. Jupiter is
+ * not: the main ring's true normal optical depth is about 5e-6 and the gossamer
+ * rings are nearer 1e-7. Rendered faithfully, Jupiter has no rings, which is
+ * also what you see through a telescope — they were not discovered until
+ * Voyager 1 flew through their plane in 1979 and looked back at them in
+ * forward-scattered light.
+ *
+ * So Jupiter's rings are exaggerated by roughly three orders of magnitude, to
+ * the point where they read as a faint dusty haze in a dark frame and nothing
+ * more. They must stay faint enough not to cast a visible shadow on the cloud
+ * tops: a shadow is a claim about optical depth that these rings cannot support.
+ * Uranus and Neptune are exaggerated far less — their main rings genuinely are
+ * optically thick — and only their dust bands are lifted.
+ *
  * @type {Readonly<Record<string, RingBand[]>>}
  */
 export const RING_SYSTEMS = Object.freeze({
   jupiter: [
-    { name: 'Halo Ring', inner: 92000, outer: 122500, opacity: 0.03, color: [0.55, 0.45, 0.4] },
-    { name: 'Main Ring', inner: 122500, outer: 129000, opacity: 0.09, color: [0.7, 0.55, 0.45] },
-    { name: 'Amalthea Gossamer Ring', inner: 129000, outer: 182000, opacity: 0.015, color: [0.6, 0.5, 0.45] },
-    { name: 'Thebe Gossamer Ring', inner: 182000, outer: 226000, opacity: 0.008, color: [0.55, 0.48, 0.45] },
+    { name: 'Halo Ring', inner: 92000, outer: 122500, opacity: 0.003, color: [0.55, 0.45, 0.4] },
+    { name: 'Main Ring', inner: 122500, outer: 129000, opacity: 0.012, color: [0.7, 0.55, 0.45] },
+    { name: 'Amalthea Gossamer Ring', inner: 129000, outer: 182000, opacity: 0.0016, color: [0.6, 0.5, 0.45] },
+    { name: 'Thebe Gossamer Ring', inner: 182000, outer: 226000, opacity: 0.0008, color: [0.55, 0.48, 0.45] },
   ],
   saturn: [
     { name: 'D Ring', inner: 66900, outer: 74510, opacity: 0.05, color: [0.62, 0.58, 0.5] },

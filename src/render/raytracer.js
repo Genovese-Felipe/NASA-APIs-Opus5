@@ -2,11 +2,14 @@
  * The renderer: owns every GPU resource and drives the pass chain.
  *
  * PASS CHAIN
- *   1. ray trace  -> HDR (RGBA16F) at `resolutionScale` of the canvas
- *   2. orbit/grid overlay drawn into the same HDR buffer (so it blooms)
- *   3. temporal accumulation (only while the view is still)
- *   4. bloom: downsample pyramid -> upsample with additive tent
- *   5. composite: exposure, tone map, grade, dither -> the canvas or an
+ *   1. ray trace  -> HDR (RGBA16F) at `resolutionScale` of the canvas, with
+ *      scene coverage written to alpha
+ *   2. stars: the catalogue as point sprites, blended against that coverage so
+ *      geometry occludes them without a depth buffer
+ *   3. orbit/grid overlay drawn into the same HDR buffer (so it blooms)
+ *   4. temporal accumulation (only while the view is still)
+ *   5. bloom: downsample pyramid -> upsample with additive tent
+ *   6. composite: exposure, tone map, grade, dither -> the canvas or an
  *      export target
  *
  * @module render/raytracer
@@ -19,7 +22,7 @@ import {
 } from './gl.js';
 import { buildRaytraceShader } from './shaders/raytrace.glsl.js';
 import {
-  ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS,
+  ACCUMULATE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS, COMPOSITE_FS, LINE_VS, LINE_FS, STAR_VS, STAR_FS,
 } from './shaders/post.glsl.js';
 import { QUALITY_BY_ID, detectQuality, AdaptiveScaler } from './quality.js';
 import { SUN_RADIUS_KM, AU_KM } from '../astro/constants.js';
@@ -115,6 +118,7 @@ export class Renderer {
     this.progUp = createProgram(gl, FULLSCREEN_VS, BLOOM_UP_FS, 'bloom-up');
     this.progComposite = createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS, 'composite');
     this.progLine = createProgram(gl, LINE_VS, LINE_FS, 'lines');
+    this.progStar = createProgram(gl, STAR_VS, STAR_FS, 'stars');
   }
 
   /** @private */
@@ -134,6 +138,20 @@ export class Renderer {
     gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12);
     gl.bindVertexArray(null);
     this._lineCapacity = 0;
+
+    // Stars: two static buffers, uploaded once when the catalogue arrives.
+    this.starVAO = gl.createVertexArray();
+    this.starDirVBO = gl.createBuffer();
+    this.starTintVBO = gl.createBuffer();
+    gl.bindVertexArray(this.starVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.starDirVBO);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.starTintVBO);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this.starCount = 0;
   }
 
   /** @private */
@@ -172,6 +190,21 @@ export class Renderer {
   setSkyMap(map) {
     this.gl.deleteTexture(this.skyTex);
     this.skyTex = createHDRTexture(this.gl, map.data, map.width, map.height);
+    this.resetAccumulation();
+  }
+
+  /**
+   * Install the point-sprite star buffers from `astro/stars.buildStarPoints`.
+   * @param {{dir:Float32Array,tint:Float32Array,count:number}} stars
+   */
+  setStars(stars) {
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.starDirVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, stars.dir, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.starTintVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, stars.tint, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    this.starCount = stars.count;
     this.resetAccumulation();
   }
 
@@ -604,9 +637,7 @@ export class Renderer {
     u1f(gl, u.uShowRings, this.settings.showRings ? 1 : 0);
     u1f(gl, u.uShowAtmosphere, this.settings.showAtmosphere ? 1 : 0);
     u1f(gl, u.uShowStars, this.settings.showStars ? 1 : 0);
-    u1f(gl, u.uSkyGain, this.settings.physicalStars
-      ? this.settings.starBrightness
-      : this.settings.starBrightness / Math.max(this._exposure(), 1e-4));
+    u1f(gl, u.uSkyGain, this._skyGain());
     u1f(gl, u.uRealisticBrightness, this.settings.realisticBrightness);
     u1i(gl, u.uRingCount, this.ringCount);
     u4fv(gl, u.uRingRadii, this.ringRadii);
@@ -617,12 +648,17 @@ export class Renderer {
     bindTexture(gl, u.uSurfaces, this.surfaces, 3, gl.TEXTURE_2D_ARRAY);
     drawFullscreen(gl);
 
-    // ---- pass 2: vector overlay -------------------------------------------
+    // ---- pass 2: stars -----------------------------------------------------
+    // Before the overlay so an orbit path drawn over the sky reads as an
+    // annotation on top of the stars, which is what it is.
+    this._drawStars(camera, opts.tile, jx, jy);
+
+    // ---- pass 3: vector overlay -------------------------------------------
     if (this.settings.showOrbits && scene.orbits.length) {
       this._drawOrbits(scene, camera, opts.tile);
     }
 
-    // ---- pass 3: temporal accumulation ------------------------------------
+    // ---- pass 4: temporal accumulation ------------------------------------
     const blend = this._accumFrames === 0 ? 1 : 1 / (this._accumFrames + 1);
     this.accum.write.bind();
     this.progAccum.use();
@@ -637,10 +673,10 @@ export class Renderer {
 
     const lit = this.accum.read;
 
-    // ---- pass 4: bloom -----------------------------------------------------
+    // ---- pass 5: bloom -----------------------------------------------------
     this._bloom(lit);
 
-    // ---- pass 5: composite -------------------------------------------------
+    // ---- pass 6: composite -------------------------------------------------
     const target = opts.target ?? null;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target);
     gl.viewport(0, 0, opts.viewportWidth ?? this.outputWidth, opts.viewportHeight ?? this.outputHeight);
@@ -694,6 +730,27 @@ export class Renderer {
   }
 
   /**
+   * Brightness multiplier for everything at stellar distance.
+   *
+   * Shared by the sky texture and the star pass so the two never disagree about
+   * how bright the sky is. Carries a 1/exposure factor by default: sunlight
+   * varies by a factor of 1600 between Mercury and Neptune and the exposure
+   * control follows it, so a star field left in absolute units would be
+   * invisible at Mercury and blinding at Neptune. Spacecraft cameras have this
+   * problem too and answer it with two exposures. Keeping the stars at a
+   * constant apparent brightness is the documented alternative, and
+   * `physicalStars` turns it off for anyone who wants the uncompromising
+   * version.
+   *
+   * @private
+   */
+  _skyGain() {
+    return this.settings.physicalStars
+      ? this.settings.starBrightness
+      : this.settings.starBrightness / Math.max(this._exposure(), 1e-4);
+  }
+
+  /**
    * The exposure multiplier that correctly exposes the focused body.
    *
    * Sunlight falls off as 1/r^2, so Neptune receives 1/900 of Earth's
@@ -711,8 +768,33 @@ export class Renderer {
     const f = scene.byId.get(camera.focus);
     if (!f) return 1;
     const dAU = Math.hypot(f.pos[0], f.pos[1], f.pos[2]) / AU_KM;
-    // The Sun itself has no meaningful "distance"; expose for its surface.
-    if (f.id === 'sun') return 0.02;
+
+    // The Sun has no meaningful "distance from the Sun", so it is metered on
+    // how much of the frame its disc fills — which is what a real camera's
+    // meter responds to as well.
+    //
+    // The two ends are far apart. Filling the frame, the photosphere has to
+    // land near the top of the tone curve rather than past it, or limb
+    // darkening and granulation are clipped to flat white and the bloom pass
+    // floods the whole image with grey. Seen from outside Neptune's orbit it is
+    // effectively a point, and the exposure that suits the disc would leave the
+    // rest of the system invisible.
+    if (f.id === 'sun') {
+      const d = Math.max(Math.hypot(
+        camera.position[0] - f.pos[0],
+        camera.position[1] - f.pos[1],
+        camera.position[2] - f.pos[2]
+      ), SUN_RADIUS_KM * 1.02);
+      // Disc radius as a fraction of the half-frame.
+      const fill = (SUN_RADIUS_KM / d) / Math.tan(camera.effectiveFov / 2);
+      const t = smoothstep(0.03, 0.45, fill);
+      // 0.85 / radiance puts the centre of the disc below the shoulder of the
+      // tone curve, leaving room for the bloom pass to add on top without
+      // clipping — which is what was flattening the granulation. 0.02 is the
+      // wide-system value that keeps the planets lit.
+      return 0.02 * (1 - t) + (0.85 / this.settings.sunRadiance) * t;
+    }
+
     return Math.min(Math.max(dAU * dAU, 0.05), 1600);
   }
 
@@ -775,6 +857,64 @@ export class Renderer {
       u1f(gl, this.progUp.uniforms.uRadius, 1.0);
       drawFullscreen(gl);
     }
+    gl.disable(gl.BLEND);
+  }
+
+  /**
+   * The star pass.
+   *
+   * Blending does the occlusion: source is scaled by one minus the destination
+   * alpha the ray tracer wrote, destination is kept as-is, and the alpha
+   * channel is left alone so the mask survives for however many stars land on
+   * the same pixel.
+   *
+   * @param {import('./camera.js').Camera} camera
+   * @param {{x:number,y:number,w:number,h:number,fullWidth:number,fullHeight:number}} [tile]
+   * @param {number} jx Sub-pixel jitter, matching the ray tracer's, in pixels.
+   * @param {number} jy
+   * @private
+   */
+  _drawStars(camera, tile, jx, jy) {
+    if (!this.starCount || !this.settings.showStars) return;
+    const gl = this.gl;
+    const fullW = tile ? tile.fullWidth : this.renderWidth;
+    const fullH = tile ? tile.fullHeight : this.renderHeight;
+
+    this.sceneRT.bind();
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.ONE_MINUS_DST_ALPHA, gl.ONE, gl.ZERO, gl.ONE);
+    this.progStar.use();
+    gl.bindVertexArray(this.starVAO);
+    const u = this.progStar.uniforms;
+
+    u3f(gl, u.uCamRight, camera.right[0], camera.right[1], camera.right[2]);
+    u3f(gl, u.uCamUp, camera.up[0], camera.up[1], camera.up[2]);
+    u3f(gl, u.uCamFwd, camera.forward[0], camera.forward[1], camera.forward[2]);
+    u1f(gl, u.uTanHalfFov, Math.tan(camera.effectiveFov / 2));
+    u1f(gl, u.uAspect, fullW / fullH);
+    u2f(gl, u.uJitter, jx, jy);
+    u2f(gl, u.uResolution, fullW, fullH);
+    u2f(gl, u.uTileOrigin, tile ? tile.x : 0, tile ? tile.y : 0);
+    u2f(gl, u.uTileSize, tile ? tile.w : this.renderWidth, tile ? tile.h : this.renderHeight);
+    u1f(gl, u.uGain, this._skyGain());
+    // Sprites are sized in device pixels, so an export at four times the
+    // resolution has to draw them four times as wide or the sky thins out.
+    const sizeScale = Math.max(1, fullH / 900);
+    u1f(gl, u.uSizeScale, sizeScale);
+    // The ceiling scales with it, or an 8K export would clamp its brightest
+    // stars back down to screen size and lose the magnitude spread entirely.
+    // gl_PointSize has an implementation-defined maximum — 64 is the floor the
+    // specification guarantees, so stay under it.
+    u1f(gl, u.uSizeMax, Math.min(16 * sizeScale, 60));
+    // Tight enough that the visible core is well inside the sprite. A slack
+    // falloff makes every star a soft disc the full width of its quad, which
+    // is the look this pass replaced.
+    u1f(gl, u.uFalloff, 6.5);
+
+    gl.drawArrays(gl.POINTS, 0, this.starCount);
+
+    gl.bindVertexArray(null);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.disable(gl.BLEND);
   }
 
@@ -893,6 +1033,9 @@ export class Renderer {
     gl.deleteTexture(this.skyTex);
     gl.deleteBuffer(this.lineVBO);
     gl.deleteVertexArray(this.lineVAO);
+    gl.deleteBuffer(this.starDirVBO);
+    gl.deleteBuffer(this.starTintVBO);
+    gl.deleteVertexArray(this.starVAO);
     gl.deleteVertexArray(this.emptyVAO);
     this.progRT.dispose();
     this.progAccum.dispose();
@@ -900,7 +1043,19 @@ export class Renderer {
     this.progUp.dispose();
     this.progComposite.dispose();
     this.progLine.dispose();
+    this.progStar.dispose();
   }
+}
+
+/**
+ * GLSL's smoothstep, for the handful of places the CPU side needs the same
+ * curve the shaders use.
+ * @param {number} a @param {number} b @param {number} x
+ * @returns {number} value in [0, 1]
+ */
+function smoothstep(a, b, x) {
+  const t = Math.min(Math.max((x - a) / (b - a || 1e-9), 0), 1);
+  return t * t * (3 - 2 * t);
 }
 
 /**

@@ -226,6 +226,23 @@ Nyquist limit, using the screen-space derivative of the radial coordinate. Real
 rings are structured at every scale, but a 1900-cycle modulation aliases into
 vicious moiré the moment a pixel spans more than half a cycle.
 
+**Opacity is where the rings stop being honest, and it has to be.** Radii are
+published values; opacity is not. Across the four systems the true normal
+optical depths span eight orders of magnitude, and half of them are invisible.
+Saturn's numbers are close to the measured ones — its B ring really is nearly
+opaque and its C ring really is about a fifth as thick. Jupiter's are not:
+its main ring's true optical depth is around 5 × 10⁻⁶ and the gossamer rings
+are nearer 10⁻⁷. Rendered faithfully, Jupiter has no rings at all, which is why
+nobody knew it had any until Voyager 1 passed through their plane in 1979 and
+photographed them backlit.
+
+So Jupiter's rings are exaggerated by roughly three orders of magnitude — far
+enough to read as a faint dusty haze against a dark sky, and no further. In
+particular they are kept too thin to cast a visible shadow on the cloud tops,
+because a shadow is a claim about optical depth that these rings cannot support.
+Uranus and Neptune need much less help: their main rings genuinely are optically
+thick, and only the dust bands between them are lifted.
+
 ## Shadows and eclipses
 
 Shadows are ray-traced occlusion queries, so an eclipse is not a special case —
@@ -245,11 +262,13 @@ being told.
 
 ## The stars
 
-8,751 real stars from the Bright Star Catalogue, at their J2000 positions,
-rendered into an equirectangular HDR map that the ray tracer samples whenever a
-ray escapes the scene. Because it is sampled in the miss branch, stars are
-occluded by planets automatically and participate in bloom exactly like any
-other light source — no separate pass, no depth sorting.
+8,751 real stars from the Bright Star Catalogue, at their J2000 positions, drawn
+as point sprites in a pass of their own so that a star stays a point at any
+zoom. They are blended against the coverage mask the ray tracer writes, so a
+planet occludes them exactly as it should, and they go into the HDR buffer
+before the bloom pass, so a bright star glares like any other light source. The
+reasoning behind the separate pass is in
+[the architecture note](architecture.md#the-pass-chain).
 
 **Colour is computed, not assigned.** Each star's B–V index gives an effective
 temperature via the Ballesteros (2012) relation:

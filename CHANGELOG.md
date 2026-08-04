@@ -21,6 +21,11 @@ The first release.
 - Oren–Nayar diffuse, GGX specular for water, planetshine and ringshine.
 - Temporal accumulation with a Halton (2,3) jitter; bloom pyramid; AgX, ACES,
   Reinhard and linear tone mapping.
+- The star catalogue drawn as point sprites in a pass of its own, so a star is
+  a point at any zoom rather than a texel of a magnified sky map. Occlusion
+  comes from the coverage mask the ray tracer writes to alpha, blended with
+  ONE_MINUS_DST_ALPHA — no depth buffer, and thin rings correctly let starlight
+  through.
 - Photometry normalised so solar irradiance at 1 au is exactly 1.0, with an
   exposure control that follows the inverse-square law.
 - Five quality tiers and an adaptive resolution controller.
@@ -60,7 +65,7 @@ The first release.
 ### Engineering
 
 - No build step, no runtime dependencies, no framework.
-- 185 unit tests and 38 browser tests, the latter with all external network
+- 194 unit tests and 38 browser tests, the latter with all external network
   access blocked.
 - A scientific data validator that checks numbers against physics.
 - A focused linter for the mistakes that break a deployed static site.

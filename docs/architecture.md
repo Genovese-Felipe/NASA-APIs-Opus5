@@ -121,12 +121,34 @@ recovering the near one from the product of the roots (`t₀t₁ = c/a`).
 ## The pass chain
 
 ```
-1. ray trace     ──▶ HDR RGBA16F, jittered by a Halton sequence
-2. vector overlay ──▶ orbit paths, drawn into the same HDR buffer so they bloom
-3. accumulate    ──▶ running mean with the previous frame, while the view is still
-4. bloom         ──▶ 13-tap downsample pyramid, tent upsample with additive blending
-5. composite     ──▶ exposure, tone map, grade, dither ──▶ canvas or export target
+1. ray trace     ──▶ HDR RGBA16F, jittered by a Halton sequence;
+                     alpha carries scene coverage
+2. stars         ──▶ the catalogue as point sprites, blended against that
+                     coverage so geometry occludes them
+3. vector overlay ──▶ orbit paths, drawn into the same HDR buffer so they bloom
+4. accumulate    ──▶ running mean with the previous frame, while the view is still
+5. bloom         ──▶ 13-tap downsample pyramid, tent upsample with additive blending
+6. composite     ──▶ exposure, tone map, grade, dither ──▶ canvas or export target
 ```
+
+**The star pass earns its place by arithmetic.** Stars were originally painted
+into the equirectangular sky texture, which is the tidier design: the ray tracer
+samples it in the miss branch, so occlusion and bloom come free. It cannot be
+made to look right. At a 40° field across 1280 pixels the screen resolves 32
+pixels per degree and a 2048-wide sky map resolves 5.7, so every texel is
+magnified 5.6× and a star splatted at the smallest kernel that survives
+resampling arrives as a soft disc a dozen pixels wide. The sky looks like
+confetti. Raising the resolution does not rescue it — 8192 × 4096 in RGB16F is
+200 MB of texture for a factor of two.
+
+A point sprite is the same two pixels across at any field of view, which is what
+a star should be. The only thing the texture was providing for free was
+occlusion, and the fixed-function blender gives that back: the ray tracer writes
+coverage into alpha, and the star pass is drawn with a source factor of
+`ONE_MINUS_DST_ALPHA`. A star behind Jupiter contributes exactly zero; a star
+behind Saturn's C ring contributes what the ring transmits. No depth buffer, no
+sorting. The sky texture keeps the Milky Way, which is diffuse and
+low-frequency and loses nothing to a fixed angular resolution.
 
 **Temporal accumulation** is what makes the image good on ordinary hardware. When
 the camera and the clock are both still, successive frames differ only by their
@@ -294,7 +316,7 @@ and Portuguese that older tables do not have.
 | `astro/planets.js` | Standish element tables, physical parameters, IAU poles, rings |
 | `astro/moons.js` | Satellite elements and the equatorial-frame transform |
 | `astro/ephemeris.js` | Assembles a complete scene for an instant |
-| `astro/stars.js` | Colour science and the equirectangular sky map |
+| `astro/stars.js` | Colour science, the star point buffers, and the Milky Way map |
 | `render/gl.js` | A small explicit WebGL2 layer — programs, targets, textures |
 | `render/camera.js` | Camera model, three navigation modes, projection |
 | `render/quality.js` | Quality tiers and the adaptive resolution controller |

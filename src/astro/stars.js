@@ -139,15 +139,27 @@ export async function loadConstellations(base = DEFAULT_DATA_BASE) {
 /**
  * Rasterise the catalogue into an equirectangular HDR sky map.
  *
- * The renderer samples this texture whenever a ray escapes the scene, so stars
- * are automatically occluded by planets and participate in bloom exactly like
- * any other light source — no separate pass, no depth sorting.
- *
  * Layout: `u` maps to ecliptic longitude 0..2*pi, `v` maps to ecliptic latitude
  * -pi/2..+pi/2 (v = 0 at the south ecliptic pole).
  *
- * Each star is splatted as a small Gaussian whose total energy is proportional
- * to its flux, so brightness survives resampling and mip generation.
+ * A NOTE ON WHY THE STARS ARE USUALLY NOT IN HERE
+ *
+ * Painting stars into this texture is the obvious approach — the renderer
+ * samples it whenever a ray escapes, so occlusion and bloom come free. It also
+ * cannot be made to look right, and the arithmetic says so before you render
+ * anything. At a 40-degree field across 1280 pixels the screen resolves 32
+ * pixels per degree; a 2048-wide equirectangular map resolves 5.7 texels per
+ * degree. Every texel is magnified 5.6 times, so a star splatted at the
+ * smallest kernel that survives resampling — about one texel — arrives on
+ * screen as a soft disc a dozen pixels across. The sky looks like confetti.
+ * Raising the resolution does not rescue it: 8192 x 4096 in RGB16F is 200 MB
+ * of texture for a 2x improvement.
+ *
+ * So by default this paints the Milky Way only, and the stars are drawn as
+ * point sprites by `render/raytracer.js` from the buffers that
+ * {@link buildStarPoints} produces. Pass `stars: true` to get the old
+ * behaviour, which is still what a context without the point pass falls back
+ * to.
  *
  * @param {object} cat Catalogue from {@link loadStarCatalogue}.
  * @param {object} [opts]
@@ -155,6 +167,7 @@ export async function loadConstellations(base = DEFAULT_DATA_BASE) {
  * @param {number} [opts.height=2048]
  * @param {number} [opts.exposure=1] Global brightness multiplier.
  * @param {number} [opts.milkyWay=1] Strength of the procedural galactic band.
+ * @param {boolean} [opts.stars=false] Splat the catalogue into the texture too.
  * @returns {{data:Float32Array, width:number, height:number}} RGB float data.
  */
 export function buildSkyMap(cat, opts = {}) {
@@ -165,6 +178,7 @@ export function buildSkyMap(cat, opts = {}) {
   const data = new Float32Array(width * height * 3);
 
   if (milkyWay > 0) paintMilkyWay(data, width, height, milkyWay);
+  if (!(opts.stars ?? false)) return { data, width, height };
 
   const rgb = [0, 0, 0];
   const n = cat.mag.length;
@@ -195,6 +209,53 @@ export function buildSkyMap(cat, opts = {}) {
   }
 
   return { data, width, height };
+}
+
+/**
+ * Pack the catalogue into vertex buffers for the point-sprite star pass.
+ *
+ * `dir` is a unit vector in the ecliptic frame — the same frame the renderer
+ * works in — so the vertex shader only has to project it. `tint` carries the
+ * blackbody colour in `rgb` and the Pogson flux in `a`, on the same scale the
+ * sky map uses, so switching between the two paths does not change how bright
+ * the sky is.
+ *
+ * Stars are sorted faintest-first. Nothing depends on the order, but drawing
+ * the brightest last means that when several land in one pixel the bright one
+ * is the last additive contribution, which keeps its colour rather than the
+ * average of its neighbours'.
+ *
+ * @param {object} cat Catalogue from {@link loadStarCatalogue}.
+ * @param {object} [opts]
+ * @param {number} [opts.exposure=1] Global brightness multiplier.
+ * @returns {{dir:Float32Array, tint:Float32Array, count:number}}
+ */
+export function buildStarPoints(cat, opts = {}) {
+  const exposure = opts.exposure ?? 1;
+  const n = cat.mag.length;
+
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => cat.mag[b] - cat.mag[a]);
+
+  const dir = new Float32Array(n * 3);
+  const tint = new Float32Array(n * 4);
+  const v = [0, 0, 0];
+  const rgb = [0, 0, 0];
+
+  for (let k = 0; k < n; k++) {
+    const s = order[k];
+    raDecToEclipticVec(cat.ra[s], cat.dec[s], v);
+    dir[k * 3] = v[0];
+    dir[k * 3 + 1] = v[1];
+    dir[k * 3 + 2] = v[2];
+
+    blackbodyRGB(bvToTemperature(cat.bv[s]), rgb);
+    tint[k * 4] = rgb[0];
+    tint[k * 4 + 1] = rgb[1];
+    tint[k * 4 + 2] = rgb[2];
+    tint[k * 4 + 3] = magnitudeToFlux(cat.mag[s]) * 15 * exposure;
+  }
+
+  return { dir, tint, count: n };
 }
 
 /**
