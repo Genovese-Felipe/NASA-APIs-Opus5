@@ -1,0 +1,85 @@
+name: Bug report
+description: Something is wrong with how the application behaves.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. The more precisely you can describe what you
+        saw, the faster it gets fixed.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      placeholder: |
+        1. Focus Saturn
+        2. Set the time rate to one year per second
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: link
+    attributes:
+      label: A link to the view
+      description: >
+        Use "Copy a link to this view" in the Explore panel. It encodes the
+        camera, the date and the language, and restores exactly — which usually
+        turns a vague report into a reproducible one.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Rendering (something looks wrong)
+        - Navigation or the camera
+        - Time controls
+        - NASA data or a panel
+        - Image or video export
+        - Translation
+        - Accessibility
+        - Performance
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Firefox 141 on Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: Renderer
+      description: >
+        Settings → Performance shows this, or visit chrome://gpu. Rendering bugs
+        are very often specific to one driver.
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Anything in the browser console, if there is anything.
+      render: shell
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: >
+        For anything visual, this is worth more than a paragraph. Press P to
+        open the capture panel, or just use your system screenshot tool.

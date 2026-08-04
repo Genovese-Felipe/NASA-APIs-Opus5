@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# Cancel an in-flight run when the branch is pushed again.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Lint, locales and data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The linter checks the things that would break the deployed site:
+      # root-absolute paths, unresolvable imports, backticks inside GLSL
+      # template literals, innerHTML, and any fetch host missing from the CSP.
+      - name: Lint
+        run: node tools/lint.mjs
+
+      # Ten catalogues drift silently. This fails on a missing key, a stray
+      # key, a placeholder mismatch or an incomplete set of CLDR plural forms.
+      - name: Validate locales
+        run: node tools/validate-locales.mjs
+
+      # Every physical parameter is cross-checked against the others and
+      # against physics: density from mass and radius, orbital periods against
+      # Kepler's third law, satellites inside the Hill sphere and outside the
+      # Roche limit, and the star catalogue for range and ordering.
+      - name: Validate scientific data
+        run: node tools/validate-data.mjs
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run unit tests
+        run: node --test "tests/unit/**/*.test.js"
+
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # WebGL2 runs on ANGLE over SwiftShader — a software rasteriser. It is
+      # slow but deterministic and needs no GPU, which is exactly what a CI
+      # runner has. The suite blocks all external network access, so the run
+      # is repeatable and does not depend on a dozen third-party services.
+      - name: Run end-to-end tests
+        run: npx playwright test --project=chromium-swiftshader
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  # A deployment that 404s is worse than one that fails loudly, so the exact
+  # bundle that would be published is assembled and checked here.
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    needs: [static]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Assemble the site
+        run: node tools/build-site.mjs --out _site
+
+      - name: Build the single-file artifact
+        run: node tools/build-artifact.mjs --out _site/standalone.html
+
+      - name: Check the bundle
+        run: |
+          test -f _site/index.html
+          test -f _site/.nojekyll
+          test -f _site/src/main.js
+          test -f _site/src/astro/data/stars.json
+          test -f _site/src/data/snapshots/sbdb.json
+          test -f _site/standalone.html
+          echo "Site size: $(du -sh _site | cut -f1)"
+          echo "Standalone: $(du -h _site/standalone.html | cut -f1)"
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: _site/
+          retention-days: 7

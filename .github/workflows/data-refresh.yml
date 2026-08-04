@@ -1,0 +1,77 @@
+name: Refresh NASA snapshots
+
+# Five healthy NASA services block cross-origin browser access, so the only way
+# to show their data on a static site is to fetch it ahead of time. This job
+# does that, and commits the result.
+#
+# It also does something less obvious but more valuable: because the same
+# snapshots are the fallback for the *live* APIs, a visitor whose DEMO_KEY quota
+# is exhausted — or who arrives while a service is down — still sees a fully
+# populated interface. Keeping the snapshots fresh is therefore not just about
+# the blocked services.
+
+on:
+  schedule:
+    # 04:17 UTC daily. Off the hour on purpose: every scheduled workflow on
+    # GitHub that asks for :00 is queued behind every other one.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated sources (blank for all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Fetch and commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch snapshots
+        run: |
+          if [ -n "${{ inputs.only }}" ]; then
+            node tools/fetch-snapshots.mjs --only "${{ inputs.only }}"
+          else
+            node tools/fetch-snapshots.mjs
+          fi
+
+      # A snapshot that is malformed, empty or full of markup must never reach
+      # the site. The unit tests assert exactly that.
+      - name: Validate the result
+        run: |
+          node --test "tests/unit/data.test.js"
+          node tools/validate-data.mjs
+
+      - name: Commit if anything changed
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- src/data/snapshots; then
+            echo "No change in the snapshots."
+            exit 0
+          fi
+          # Summarise what moved, so the commit message is worth reading.
+          SUMMARY=$(git diff --stat -- src/data/snapshots | tail -1)
+          git add src/data/snapshots
+          git commit -m "data: refresh NASA snapshots
+
+          ${SUMMARY}
+
+          Fetched by .github/workflows/data-refresh.yml. Sources: JPL SSD/CNEOS,
+          NASA Exoplanet Archive, TechPort, OSDR and TechTransfer — all of which
+          block cross-origin browser access."
+          git push

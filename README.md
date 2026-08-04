@@ -1,127 +1,157 @@
-# NASA COSMOS // OPUS 5
+<div align="center">
 
-> A live computational observatory: NASA open data becomes ray-traced worlds, orbital swarms, Earth-event signals, solar sonification, a searchable media archive, and native-resolution captures.
+# ORRERY
 
-[Launch the observatory](https://genovese-felipe.github.io/NASA-APIs-Opus5/) · [Architecture](docs/ARCHITECTURE.md) · [API governance](docs/API-GOVERNANCE.md) · [Quality evidence](docs/QUALITY.md)
+**A ray-traced tour of the solar system, built from NASA data — running entirely in your browser.**
+
+[**Open the app →**](https://genovese-felipe.github.io/NASA-APIs-Opus5/)  ·  [Documentation](docs/)  ·  [Data sources](DATA-AND-CREDITS.md)  ·  [Contributing](CONTRIBUTING.md)
+
+![Saturn, ray-traced, with the ring shadow across its cloud tops](docs/images/saturn.jpg)
+
+*Saturn on the date you load the page, at its real position, with the ring shadow across its cloud tops and the planet's shadow across the rings. Everything in this image is computed: no textures were used, no artwork was traced.*
+
+</div>
+
+---
 
 ## What this is
 
-OPUS 5 is not a slideshow with space imagery behind a dashboard. Its main canvas is a WebGL 2 analytic ray tracer. It computes camera rays, sphere intersections, lighting, atmospheric rims, orbital paths, asteroid intersections, solar plasma, a procedural stellar field, and a compact gravitational-lensing approximation every frame. Live NASA data changes the visual energy, event positions, orbital population, hazard signal, and generative sound.
+An interactive model of the solar system that is **correct first and beautiful second**, and turns out to be both.
 
-The application is a static, privacy-preserving GitHub Pages site. It needs no backend, account, analytics, or bundled API secret.
+Planet positions come from JPL's published Keplerian elements and agree with the JPL Horizons ephemeris to within 10–270 arcseconds. Radii, masses, densities, rotation periods and albedos are transcribed from JPL's physical-parameter tables. Axial tilts and rotation phases use the IAU Working Group's rotational elements, which is why Saturn's rings open and close over its 29-year year, and why the Uranian moons orbit vertically. The 8,751 stars behind everything are the real Bright Star Catalogue, coloured by their real B–V index.
 
-## Standout capabilities
+It renders with a **ray tracer**, not a rasteriser — bodies are analytic quadrics, shadows are occlusion queries, and eclipses, ring shadows and mutual moon shadows all fall out of the same code path with correct umbra and penumbra.
 
-| System | What ships |
-| --- | --- |
-| Computational graphics | WebGL 2 full-screen analytic ray tracing, procedural materials, Earth atmosphere, event beacons, asteroid swarm, solar corona, lensing scene, ACES-style tone mapping, bloom, grain, deep AMOLED blacks |
-| NASA data | APOD, NeoWs, DONKI, DSCOVR EPIC, EONET v3, NASA Image and Video Library; a governed catalog also covers GIBS, Exoplanet Archive, Technology Transfer, TLE, archived Mars/InSight endpoints, and policy-restricted JPL SSD services |
-| Navigation | Mouse drag, wheel zoom, touch drag, pinch zoom, arrow keys, orbit mode, adjustable speed and inclination, pause, and an automatic cinematic journey |
-| Quality | Auto dynamic resolution plus Low, Balanced, High, and Ultra profiles; uncapped `requestAnimationFrame` scheduling respects high-refresh displays |
-| Still export | PNG, JPEG, and WebP; viewport, native 4K, and tiled native 8K. The renderer recomputes every export pixel instead of enlarging the visible canvas |
-| Recording | Canvas recording up to 120 seconds; MP4/H.264 is preferred when the browser exposes it, with VP9/VP8 WebM fallbacks |
-| Audio | Copyright-safe procedural Web Audio sonification. Space-weather and scene energy alter pitch, filter, and pulse behavior; the track is included in recordings when enabled |
-| Languages | English, Portuguese, Spanish, Simplified Chinese, Korean, French, Japanese, German, and Arabic with RTL layout |
-| Reliability | Typed schema normalization, request timeouts, bounded concurrency, TTL caching, stale-on-error recovery, honest deterministic demo mode, context-loss recovery, and a shell service worker |
-| Accessibility | Semantic controls, visible focus, skip link, keyboard operation, reduced-motion support, touch targets, status announcements, high-contrast text, and meaningful archive image alt text |
+There is no build step, no framework and no runtime dependency. The whole thing is forty-one ES modules that a browser reads directly, which means you can open the developer tools and read the source of anything you are looking at.
 
-## NASA API coverage: what “all” can responsibly mean
+## Highlights
 
-NASA does not expose one immutable, universally browser-embeddable API surface. Some products are archived; others use different NASA centers and policies. The JPL SSD/CNEOS service explicitly says its APIs may not be embedded in a website. OPUS 5 therefore treats coverage as a governed constellation:
+|  |  |
+|---|---|
+| **Ray-traced, not rasterised** | Analytic ray–spheroid intersection, so a limb is perfectly smooth at any zoom. Soft shadows come from a closed-form disc-overlap term, giving physically sized umbra and penumbra without a single stochastic sample. |
+| **Physically correct light** | Solar irradiance follows the inverse-square law across the whole system: Neptune really is 900 times darker than Earth, and the exposure control opens up to compensate exactly as a spacecraft camera does. |
+| **Real atmospheres** | Single-scattering Rayleigh and Mie integration through a spherical shell, using each world's true scale height — 8.5 km for Earth, 59.5 km for Saturn, 21 km for Titan. |
+| **Real NASA imagery** | Earth, Mars, the Moon and Mercury are textured from GIBS and NASA Trek tile pyramids, stitched at runtime. Everything else is procedurally generated in the shader. |
+| **Eleven live NASA APIs** | Picture of the Day, near-Earth objects with drawable orbits, DSCOVR's view of Earth, wildfires and volcanoes, solar flares and CMEs, and more — with an honest fallback when a service is down. |
+| **8K export** | Tiled offscreen rendering with hundreds of samples per pixel, encoded to PNG without ever allocating a canvas — which is the only way to get 7680 × 4320 out of a browser at all. |
+| **Video recording** | MP4 where the browser can genuinely produce it, WebM everywhere else, plus an offline path that renders a perfectly smooth orbit at any quality regardless of how fast your machine is. |
+| **Ten languages** | English, 简体中文, Português (Brasil), Español, 한국어, Français, 日本語, Deutsch, Русский and العربية — the last of which drives the entire interface through a right-to-left pass. |
 
-1. **Live adapters** call current, browser-appropriate sources and validate their payloads.
-2. **Catalog adapters** explain and link to official specialist sources that are not suitable for direct client embedding.
-3. **Archived adapters** remain discoverable but never masquerade as live.
-4. **Demo signals** are deterministic and visibly marked; they are never presented as current NASA observations.
+<div align="center">
 
-This is broader—and more honest—than firing every endpoint from a browser until CORS, policy, or rate limits fail.
+![Earth](docs/images/earth.jpg)
+*Earth, with an atmospheric limb integrated from real Rayleigh and Mie coefficients. The imagery is NASA's Blue Marble, streamed from GIBS.*
 
-## If the public URL shows 404 or a blank page
+</div>
 
-The repository now contains both the Vite build path and compiled root assets, so it works with either **GitHub Actions** Pages or the classic **Deploy from a branch** mode. If the URL is still unavailable, enable Pages once at **Settings → Pages → Build and deployment** and choose either **GitHub Actions** or **Deploy from a branch / main / root**. Then rerun the workflow from the **Actions** tab. The workflow's code/tests/build already pass; a 404 at this point means the Pages site itself has not been enabled for the repository account.
-
-## Quick start
-
-Requirements: Node.js 20 or newer.
+## Try it
 
 ```bash
-npm install
-npm run dev
+git clone https://github.com/Genovese-Felipe/NASA-APIs-Opus5.git
+cd NASA-APIs-Opus5
+npm run dev          # http://localhost:8080
 ```
 
-Verification:
+No install step is needed to *run* it — `npm install` is only for the test suite.
+
+There is also a **single-file build**: `npm run build:artifact` produces `standalone.html`, one self-contained file with the whole application and all 8,751 stars inside it. Open it with `file://`, email it, put it on a USB stick; it needs nothing.
+
+## What you can do
+
+**Move around.** Drag to orbit, scroll to zoom, click any world to go there. Press <kbd>F</kbd> for six-degree-of-freedom flight, where your speed scales with how far the nearest thing is, so the same key feels right skimming Enceladus and crossing the Kuiper Belt.
+
+**Move time.** Scrub from 3000 BC to AD 3000 and watch Saturn's rings open and close, Jupiter's moons weave through their Laplace resonance, and the inner planets lap the outer ones. Press <kbd>N</kbd> to snap back to this instant.
+
+**Take the tours.** Five guided sequences, each making a point that is easier to see than to explain: what casts the shadow on Saturn's clouds, why a total eclipse requires a coincidence, and why every diagram of the solar system you have ever seen is a lie about scale.
+
+**Look at the data.** Sixteen NASA services feed the panels, and a Data Health view tells you exactly where every number came from — live, cached, or a snapshot our CI committed last night — and how old it is.
+
+**Take it away.** Export a still at up to 8K with hundreds of samples per pixel, or record video. Every export embeds the simulated date in its metadata, so a picture is reproducible.
+
+<div align="center">
+
+![The inner system from 40 astronomical units](docs/images/system.jpg)
+*The inner system from about 40 astronomical units. The planets are points of light at the correct apparent magnitude — which is exactly how much of the solar system there is to see.*
+
+</div>
+
+## How it works
+
+```
+index.html ─── src/main.js ─┬─ ui/          interface, i18n, tours, labels
+                            ├─ render/      WebGL2 ray tracer, export, capture
+                            ├─ astro/       ephemeris, Kepler, catalogues
+                            ├─ data/        NASA API clients and snapshots
+                            └─ audio/       synthesised soundscape
+```
+
+The renderer runs five passes: a fragment shader that ray-traces the scene into a floating-point buffer, a vector overlay for orbit paths, temporal accumulation that keeps refining the image while you hold still, a bloom pyramid, and a composite that tone-maps and grades.
+
+Everything inside the shader is **camera-relative and measured in megametres**. That one decision is what lets a scene 4.5 billion kilometres across render in 32-bit floats without cracks.
+
+Full detail is in [`docs/architecture.md`](docs/architecture.md); the physics and the accuracy limits are in [`docs/science.md`](docs/science.md).
+
+## The data
+
+Sixteen NASA and JPL services are integrated — eleven called live from the browser, five fetched ahead of time because they refuse cross-origin requests — and two more are documented as retired with the evidence. That is not incidental detail — a third of the endpoints listed on `api.nasa.gov` either block browsers or have quietly stopped working, and pretending otherwise produces an app that is broken for half its visitors.
+
+| | |
+|---|---|
+| **Live from the browser** | APOD · Asteroids NeoWs · EPIC · EONET · DONKI · Image and Video Library · GIBS · Trek WMTS · POWER · Satellite Situation Center · TLE |
+| **Fetched nightly by CI** | JPL SSD/CNEOS (close approaches, impact risk, fireballs) · NASA Exoplanet Archive · TechPort · OSDR/GeneLab · TechTransfer — all five block cross-origin browser access |
+| **Retired, and why** | Mars Rover Photos (backend gone) · Earth/Landsat imagery (connections hang) |
+
+Two operational details worth knowing:
+
+- **`DEMO_KEY` allows 30 requests an hour**, shared by everyone on your network address. The app caches aggressively, de-duplicates in flight, reads the remaining quota from the response headers, and falls back to committed snapshots — so it stays usable when the quota is gone. Adding [your own free key](https://api.nasa.gov/#signUp) raises the limit to 1,000 an hour; it is stored only in your browser and sent only to `api.nasa.gov`.
+- **DONKI is fetched from the CCMC origin**, not from `api.nasa.gov`, because the mirror has been returning 502 and 503 for an extended period while the origin behind it is healthy, needs no key, and sends the right CORS header.
+
+Every source, its terms, and the required attribution are in [`DATA-AND-CREDITS.md`](DATA-AND-CREDITS.md).
+
+## Accuracy, honestly
+
+| Quantity | Method | Accuracy |
+|---|---|---|
+| Planet positions | JPL approximate elements (Standish & Williams 1992) | 8″ (Venus) to 270″ (Saturn) against Horizons |
+| Earth's position | Same, corrected for the Earth–Moon barycentre offset | ~10″ |
+| Satellite positions | JPL mean elements, precessing-ellipse fit | Degrades over decades; marked approximate in the UI |
+| Physical parameters | JPL fact tables, transcribed | As published |
+| Axial orientation | IAU WGCCRE 2015 rotational elements | As published |
+| Star positions | Bright Star Catalogue, J2000, no proper motion | Sub-arcsecond at epoch |
+| Pluto | Classical 1992 elements; absent from the modern table | Markedly looser |
+
+Good enough to be right about where everything is. Not good enough to navigate a spacecraft, and the app says so.
+
+Two deliberate departures from physics, both documented in the interface and switchable:
+
+1. **Star brightness is held constant** rather than scaling with exposure, so the sky is visible at Mercury and not blinding at Neptune. Turn on *Physical star brightness* for the uncompromising version.
+2. **Distant planets are drawn as "beacons"** at their true apparent magnitude, matched to the star scale, so a wide view of the system is not empty. The physically continuous term is always there underneath.
+
+## Quality and testing
 
 ```bash
-npm test
-npm run build
+npm run check      # lint, locales, scientific data, unit tests
+npm test           # 185 unit tests
+npm run test:e2e   # 38 browser tests with real WebGL2
 ```
 
-The build emits a static `dist/` directory with relative asset paths, ready for GitHub Pages.
+- **185 unit tests** covering the Kepler solver against its own residual, orbital energy and angular momentum conservation, planet positions against JPL Horizons reference vectors, the PNG encoder against the reference CRC-32, the camera basis for orthonormality, and every locale for plural correctness.
+- **38 end-to-end tests** in a real browser with real WebGL2 (ANGLE over SwiftShader, so no GPU needed): the shaders compile, the frame contains a lit planet, a 1080p export is a structurally valid PNG of exactly the right size, tiled rendering leaves no seam, all ten languages render with no untranslated keys, and every interactive control has an accessible name. **All external network access is blocked during the run** — the app is built to work from committed data, so an offline test is both valid and repeatable.
+- **A scientific data validator** that cross-checks every number against physics rather than against itself: density from mass and radius, orbital periods from Kepler's third law, every satellite inside its planet's Hill sphere and outside the Roche limit. It has already caught two real modelling errors — one of which correctly identified that Phobos orbits *inside* Mars's fluid Roche limit.
+- **A focused linter** for the mistakes that break a deployed static site: root-absolute paths, unresolvable imports, `innerHTML`, and any fetch host missing from the Content Security Policy.
 
-## Controls
+## Accessibility
 
-| Input | Action |
-| --- | --- |
-| Drag / touch drag | Rotate the observer |
-| Wheel / pinch | Change orbital distance |
-| Arrow keys | Precision camera movement |
-| `O` | Toggle orbit mode |
-| `Space` | Pause or resume motion |
-| `E` | Open the export studio |
-| `R` | Start or stop recording |
+The interface is HTML over the canvas, never text drawn into WebGL — which is what makes Arabic shape correctly, Japanese pick the right font, and a screen reader able to read anything at all. Beyond that: a skip link, a labelled and described canvas, an ARIA live region that announces every change of focus, full keyboard operation, a reduced-motion mode that removes camera easing and auto-orbit, a high-contrast theme, a larger-text mode, and a photosensitivity note next to the bloom controls.
 
-## API key model
+## Licence
 
-The built-in `DEMO_KEY` is an official NASA convenience key with strict limits. A personal key can be entered in Mission Control and is stored only in `sessionStorage`. Because GitHub Pages is client-side, no browser key can be treated as a server secret. The repository and generated bundles contain no personal key.
+Code is [MIT](LICENSE). NASA data and imagery are governed by NASA's media usage guidelines; see [`DATA-AND-CREDITS.md`](DATA-AND-CREDITS.md).
 
-Get a key from the [NASA Open APIs portal](https://api.nasa.gov/).
+**This project is not endorsed by, affiliated with, or sponsored by NASA or JPL.** The NASA insignia, logotype and seal are protected marks and are not used here.
 
-## Capture behavior
+---
 
-### Still images
-
-- **Viewport:** exports the active internal render resolution.
-- **4K:** re-renders at 3840 × 2160.
-- **8K:** re-renders 7680 × 4320 in GPU-safe tiles and assembles them in a browser canvas.
-- The application checks output dimensions and applies a conservative memory guard. A device that cannot safely encode the output receives a clear lower-resolution recommendation.
-
-### Video
-
-`MediaRecorder.isTypeSupported()` determines the container at runtime. MP4/H.264 is chosen first where the browser supports it; otherwise WebM VP9, WebM VP8, or baseline WebM is used. This is a browser capability decision—not a misleading “convert to MP4” label over WebM bytes.
-
-## Private Claude artifact
-
-The private artifact is deliberately excluded from the public repository. Generate it with:
-
-```bash
-npm run artifact
-```
-
-The result is one self-contained HTML file in `artifact/`, with the production CSS and JavaScript inlined. See [Claude artifact notes](docs/CLAUDE-ARTIFACT.md).
-
-## Project map
-
-```text
-src/
-  api.ts         request broker, cache, adapters, validation, demo data
-  renderer.ts    WebGL lifecycle, camera, touch, quality, tiled export
-  shaders.ts     computational visual model
-  audio.ts       generative Web Audio sonification
-  export.ts      still encoding and MP4/WebM capability negotiation
-  i18n.ts        nine complete interface dictionaries
-  main.ts        accessible application shell and orchestration
-tests/           normalization, cache, localization, capture tests
-docs/            architecture, research, governance, accessibility, QA
-```
-
-## Governance and limitations
-
-- NASA data services are best-effort and may change. Each adapter fails independently.
-- NASA Library media retains its source metadata and is kept outside the export canvas to avoid attribution loss and cross-origin canvas tainting.
-- The ray tracer is an educational real-time renderer, not a mission-grade orbital dynamics or general-relativity solver.
-- “Potentially hazardous” is NASA/JPL classification metadata, not an impact prediction.
-- This independent project is not sponsored, endorsed, or operated by NASA.
-
-## License
-
-Source code is released under the [MIT License](LICENSE). NASA media and data remain subject to their original policies and attribution requirements.
+<div align="center">
+<sub>Built with public data from NASA, JPL, and the people who spent their careers gathering it.</sub>
+</div>

@@ -1,6 +1,22 @@
 node_modules/
-dist/
 .DS_Store
-coverage/
-artifact/*.html
 *.log
+npm-debug.log*
+.env
+.env.local
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Build output
+dist/
+artifact/
+_site/
+standalone.html
+
+# Local scratch
+tmp/
+.cache/

@@ -1,0 +1,26 @@
+name: Idea
+description: Something the application could do that it does not.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What it would let someone do
+      description: >
+        The most useful framing is what a person would be able to see or
+        understand that they cannot today.
+    validations:
+      required: true
+
+  - type: input
+    id: prior
+    attributes:
+      label: Anywhere it has been done well
+      description: A link to another project or paper, if you know of one.

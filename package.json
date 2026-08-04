@@ -1,26 +1,47 @@
 {
-  "name": "nasa-apis-opus5",
-  "private": true,
+  "name": "nasa-explorer",
   "version": "1.0.0",
+  "description": "ORRERY — a ray-traced, data-driven NASA solar system explorer that runs entirely in the browser.",
   "type": "module",
-  "description": "NASA COSMOS // OPUS 5 — a live computational observatory for NASA open data.",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build && npm run validate:dist",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "validate:dist": "node scripts/validate-dist.mjs",
-    "artifact": "npm run build && node scripts/build-artifact.mjs && node scripts/validate-artifact.mjs && node scripts/smoke-artifact.mjs"
-  },
-  "devDependencies": {
-    "@types/node": "^24.2.0",
-    "jsdom": "^26.1.0",
-    "typescript": "^5.9.2",
-    "vite": "^7.0.6",
-    "vitest": "^3.2.4"
+  "private": true,
+  "license": "MIT",
+  "homepage": "https://genovese-felipe.github.io/NASA-APIs-Opus5/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Genovese-Felipe/NASA-APIs-Opus5.git"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "serve": "node tools/serve.mjs",
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test:unit": "node --test \"tests/unit/**/*.test.js\"",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "lint": "node tools/lint.mjs",
+    "validate:locales": "node tools/validate-locales.mjs",
+    "validate:data": "node tools/validate-data.mjs",
+    "snapshots": "node tools/fetch-snapshots.mjs",
+    "stars": "node tools/build-star-catalogue.mjs",
+    "screenshots": "node tools/capture-screenshots.mjs",
+    "build:site": "node tools/build-site.mjs",
+    "build:artifact": "node tools/build-artifact.mjs",
+    "check": "npm run lint && npm run validate:locales && npm run validate:data && npm run test:unit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  },
+  "keywords": [
+    "nasa",
+    "solar-system",
+    "webgl2",
+    "ray-tracing",
+    "orrery",
+    "astronomy",
+    "open-data",
+    "visualization",
+    "github-pages"
+  ]
 }

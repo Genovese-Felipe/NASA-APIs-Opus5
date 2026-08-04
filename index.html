@@ -1,21 +1,230 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#030509" />
-    <meta name="description" content="NASA COSMOS // OPUS 5 — explore live NASA data through an interactive computational observatory." />
-    <meta name="color-scheme" content="dark" />
-    <meta property="og:title" content="NASA COSMOS // OPUS 5" />
-    <meta property="og:description" content="A live, multilingual computational observatory built from NASA open data." />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <title>NASA COSMOS // OPUS 5</title>
-    <script type="module" crossorigin src="./assets/opus5.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/style.css">
-  </head>
-  <body>
-    <a class="skip-link" href="#main-controls">Skip to observatory controls</a>
-    <div id="app"></div>
-    <noscript>This observatory needs JavaScript and WebGL 2. NASA source links remain available in the repository documentation.</noscript>
-  </body>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ORRERY — A ray-traced tour of the solar system, built from NASA data</title>
+
+<meta name="description" content="An interactive, ray-traced model of the solar system that runs entirely in your browser, assembled from public NASA and JPL data. Real positions, real imagery, real physics — with 8K image export and video recording.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070d">
+
+<!--
+  Content Security Policy.
+
+  A <meta> CSP cannot express frame-ancestors, report-uri or sandbox, but it can
+  express everything else, and GitHub Pages does not let us set headers. The
+  connect-src list is exactly the set of NASA hosts the app talks to, verified
+  one by one; anything not on it is a bug or an attack.
+
+  'unsafe-inline' for style-src is required because the app sets a handful of
+  inline styles for positioning 3D labels over the canvas, which is per-frame
+  and cannot go through a stylesheet. No inline scripts are used at all.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob: https://api.nasa.gov https://apod.nasa.gov https://images-assets.nasa.gov https://images-api.nasa.gov https://gibs.earthdata.nasa.gov https://trek.nasa.gov https://epic.gsfc.nasa.gov;
+  connect-src 'self' https://api.nasa.gov https://eonet.gsfc.nasa.gov https://images-api.nasa.gov https://images-assets.nasa.gov https://gibs.earthdata.nasa.gov https://trek.nasa.gov https://kauai.ccmc.gsfc.nasa.gov https://webtools.ccmc.gsfc.nasa.gov https://power.larc.nasa.gov https://sscweb.gsfc.nasa.gov https://tle.ivanstanojevic.me;
+  media-src 'self' blob:;
+  font-src 'self';
+  base-uri 'none';
+  form-action 'none';
+  object-src 'none';
+  worker-src 'self' blob:;
+">
+
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="src/styles/app.css">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="ORRERY — a ray-traced tour of the solar system">
+<meta property="og:description" content="Real NASA data, real physics, in your browser. Ray-traced planets, true orbits, live space weather, 8K export.">
+<meta property="og:image" content="assets/social-card.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body>
+<a class="skip-link" href="#controls" data-i18n="app.skipToContent">Skip to the controls</a>
+
+<!-- The 3D view ------------------------------------------------------------->
+<canvas id="view"
+        aria-label="Three-dimensional view of the solar system"
+        data-i18n-attr="aria-label:app.canvasLabel"
+        role="img"
+        aria-describedby="canvas-description"></canvas>
+<p id="canvas-description" class="visually-hidden" data-i18n="app.canvasDescription">
+  An interactive 3D scene. Use the body list and information panels for the same content in text form.
+</p>
+
+<!-- Labels drawn over the canvas ------------------------------------------->
+<div id="labels" aria-hidden="true"></div>
+
+<!-- Boot screen ------------------------------------------------------------->
+<div id="boot" class="boot">
+  <div class="boot__inner">
+    <h1 class="boot__title">ORRERY</h1>
+    <p class="boot__subtitle" data-i18n="app.subtitle">A ray-traced tour of the solar system, built from NASA data</p>
+    <div class="boot__bar"><div class="boot__fill" id="boot-fill"></div></div>
+    <p class="boot__status" id="boot-status" data-i18n="app.loading">Assembling the solar system…</p>
+    <p class="boot__error" id="boot-error" hidden></p>
+  </div>
+</div>
+
+<!-- Header ------------------------------------------------------------------>
+<header class="topbar" id="topbar">
+  <div class="topbar__brand">
+    <svg class="topbar__mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <ellipse cx="12" cy="12" rx="10.5" ry="4" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+      <ellipse cx="12" cy="12" rx="7" ry="2.6" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".8"/>
+      <circle cx="12" cy="12" r="2.6" fill="currentColor"/>
+    </svg>
+    <span class="topbar__name">ORRERY</span>
+  </div>
+
+  <div class="topbar__center">
+    <button class="chip" id="focus-chip" type="button" aria-haspopup="dialog">
+      <span class="chip__label" id="focus-name">Earth</span>
+      <span class="chip__meta" id="focus-meta"></span>
+    </button>
+  </div>
+
+  <div class="topbar__actions">
+    <button class="icon-btn" id="btn-health" type="button"
+            data-i18n-attr="title:health.title,aria-label:health.title">
+      <span class="status-dot" id="status-dot" data-state="unknown"></span>
+      <span class="icon-btn__text" data-i18n="nav.data">Live data</span>
+    </button>
+    <button class="icon-btn" id="btn-search" type="button"
+            data-i18n-attr="title:keys.search,aria-label:keys.search">⌕</button>
+    <button class="icon-btn" id="btn-language" type="button"
+            data-i18n-attr="title:settings.language,aria-label:settings.language">文A</button>
+    <button class="icon-btn" id="btn-help" type="button"
+            data-i18n-attr="title:nav.help,aria-label:nav.help">?</button>
+    <button class="icon-btn" id="btn-hide-ui" type="button"
+            data-i18n-attr="title:keys.hideUI,aria-label:keys.hideUI">◱</button>
+  </div>
+</header>
+
+<!-- Left rail: worlds ------------------------------------------------------->
+<nav class="rail" id="rail" aria-label="Worlds">
+  <h2 class="rail__title" data-i18n="nav.bodies">Worlds</h2>
+  <ul class="rail__list" id="body-list"></ul>
+</nav>
+
+<!-- Right panel ------------------------------------------------------------->
+<aside class="panel" id="panel" aria-live="polite">
+  <div class="panel__tabs" role="tablist" id="panel-tabs">
+    <button role="tab" class="panel__tab is-active" data-panel="body" aria-selected="true"
+            data-i18n="nav.explore">Explore</button>
+    <button role="tab" class="panel__tab" data-panel="data" aria-selected="false"
+            data-i18n="nav.data">Live data</button>
+    <button role="tab" class="panel__tab" data-panel="tours" aria-selected="false"
+            data-i18n="nav.tours">Tours</button>
+    <button role="tab" class="panel__tab" data-panel="capture" aria-selected="false"
+            data-i18n="nav.capture">Capture</button>
+    <button role="tab" class="panel__tab" data-panel="settings" aria-selected="false"
+            data-i18n="nav.settings">Settings</button>
+  </div>
+  <div class="panel__body" id="panel-body" role="tabpanel"></div>
+</aside>
+
+<!-- Time bar ---------------------------------------------------------------->
+<footer class="timebar" id="controls">
+  <div class="timebar__clock">
+    <time class="timebar__date" id="clock-date">—</time>
+    <span class="timebar__jd" id="clock-jd"></span>
+  </div>
+
+  <div class="timebar__transport">
+    <button class="t-btn" id="btn-slower" type="button"
+            data-i18n-attr="title:time.slower,aria-label:time.slower">⏪</button>
+    <button class="t-btn t-btn--primary" id="btn-play" type="button"
+            data-i18n-attr="title:time.play,aria-label:time.play">⏸</button>
+    <button class="t-btn" id="btn-faster" type="button"
+            data-i18n-attr="title:time.faster,aria-label:time.faster">⏩</button>
+    <button class="t-btn t-btn--wide" id="btn-now" type="button" data-i18n="time.now">Now</button>
+  </div>
+
+  <div class="timebar__rate">
+    <label class="visually-hidden" for="rate-slider" data-i18n="time.rate">Time rate</label>
+    <input type="range" id="rate-slider" min="0" max="12" step="1" value="5">
+    <output id="rate-label" for="rate-slider">Real time</output>
+  </div>
+
+  <div class="timebar__quality">
+    <span class="conv" id="convergence" title="Accumulated samples"></span>
+    <span class="fps" id="fps-readout"></span>
+  </div>
+</footer>
+
+<!-- Dialogs ----------------------------------------------------------------->
+<dialog class="modal" id="dlg-language" aria-labelledby="dlg-language-title">
+  <h2 id="dlg-language-title" data-i18n="settings.language">Language</h2>
+  <ul class="lang-list" id="lang-list"></ul>
+  <form method="dialog"><button class="btn" data-i18n="nav.close">Close</button></form>
+</dialog>
+
+<dialog class="modal modal--wide" id="dlg-health" aria-labelledby="dlg-health-title">
+  <h2 id="dlg-health-title" data-i18n="health.title">Data health</h2>
+  <div id="health-body"></div>
+  <form method="dialog"><button class="btn" data-i18n="nav.close">Close</button></form>
+</dialog>
+
+<dialog class="modal modal--wide" id="dlg-help" aria-labelledby="dlg-help-title">
+  <h2 id="dlg-help-title" data-i18n="keys.title">Keyboard</h2>
+  <div id="help-body"></div>
+  <form method="dialog"><button class="btn" data-i18n="nav.close">Close</button></form>
+</dialog>
+
+<dialog class="modal" id="dlg-search" aria-labelledby="dlg-search-title">
+  <h2 id="dlg-search-title" class="visually-hidden" data-i18n="keys.search">Search</h2>
+  <input type="search" id="search-input" class="search-input" autocomplete="off"
+         data-i18n-attr="placeholder:data.media.searchPlaceholder">
+  <ul class="search-results" id="search-results" role="listbox"></ul>
+</dialog>
+
+<dialog class="modal" id="dlg-intro" aria-labelledby="dlg-intro-title">
+  <h2 id="dlg-intro-title" data-i18n="intro.welcome">Welcome</h2>
+  <p data-i18n="intro.line1"></p>
+  <p data-i18n="intro.line2"></p>
+  <p class="muted" data-i18n="intro.line3"></p>
+  <div class="modal__actions">
+    <button class="btn btn--primary" id="intro-begin" data-i18n="intro.begin">Begin exploring</button>
+    <button class="btn" id="intro-tour" data-i18n="intro.takeTour">Take the tour instead</button>
+  </div>
+  <label class="check"><input type="checkbox" id="intro-hide"> <span data-i18n="intro.dontShowAgain">Do not show this again</span></label>
+</dialog>
+
+<!-- Live region for screen readers ------------------------------------------>
+<p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>
+
+<!-- Toast ------------------------------------------------------------------->
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- Tour overlay ------------------------------------------------------------>
+<div class="tour" id="tour" hidden>
+  <div class="tour__card">
+    <p class="tour__step" id="tour-step"></p>
+    <h3 class="tour__title" id="tour-title"></h3>
+    <p class="tour__text" id="tour-text"></p>
+    <div class="tour__actions">
+      <button class="btn" id="tour-prev" data-i18n="tour.previous">Previous</button>
+      <button class="btn btn--primary" id="tour-next" data-i18n="tour.next">Next</button>
+      <button class="btn btn--ghost" id="tour-stop" data-i18n="tour.stop">End tour</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+<noscript>
+  <div class="noscript">
+    <h1>ORRERY</h1>
+    <p>This is an interactive 3D application and needs JavaScript to run.</p>
+    <p>The <a href="docs/">documentation</a> describes what it does and shows what it looks like.</p>
+  </div>
+</noscript>
+</body>
 </html>

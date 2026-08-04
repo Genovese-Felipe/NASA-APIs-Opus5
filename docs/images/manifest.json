@@ -1,0 +1,91 @@
+{
+  "generatedBy": "tools/capture-screenshots.mjs",
+  "width": 1280,
+  "height": 720,
+  "shots": [
+    {
+      "id": "saturn",
+      "body": "saturn",
+      "distance": 6,
+      "pitch": 0.3,
+      "phase": 62,
+      "fov": 40,
+      "caption": "Saturn, with the ring shadow across the cloud tops and the planet's shadow across the rings.",
+      "file": "saturn.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 17,
+      "samples": 46
+    },
+    {
+      "id": "earth",
+      "body": "earth",
+      "distance": 3.6,
+      "pitch": 0.12,
+      "phase": 78,
+      "fov": 42,
+      "caption": "Earth at its real position, with an atmospheric limb integrated from Rayleigh and Mie scattering.",
+      "file": "earth.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 11,
+      "samples": 46
+    },
+    {
+      "id": "jupiter",
+      "body": "jupiter",
+      "distance": 7,
+      "pitch": 0.18,
+      "phase": 55,
+      "fov": 40,
+      "caption": "Jupiter. The oblateness is not stylised — the equatorial radius really is 6.5 per cent larger than the polar one.",
+      "file": "jupiter.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 14,
+      "samples": 47
+    },
+    {
+      "id": "mars",
+      "body": "mars",
+      "distance": 4.2,
+      "pitch": 0.2,
+      "phase": 50,
+      "fov": 42,
+      "caption": "Mars, with Phobos and Deimos on their true orbits.",
+      "file": "mars.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 12,
+      "samples": 47
+    },
+    {
+      "id": "system",
+      "body": "sun",
+      "distance": 9000,
+      "pitch": 0.62,
+      "phase": 30,
+      "fov": 50,
+      "caption": "The inner system from about 40 astronomical units. Planets this far away are points of light of the correct apparent magnitude.",
+      "file": "system.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 10,
+      "samples": 46
+    },
+    {
+      "id": "sun",
+      "body": "sun",
+      "distance": 5,
+      "pitch": 0.1,
+      "phase": 20,
+      "fov": 45,
+      "caption": "The Sun, with limb darkening and a corona that falls off as r^-2.5.",
+      "file": "sun.png",
+      "jd": 2461256.8962268517,
+      "date": "2026-08-04T09:30:34.000Z",
+      "bodies": 10,
+      "samples": 46
+    }
+  ]
+}

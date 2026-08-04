@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # The application has no runtime dependencies; this covers the test tooling.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps'
+    groups:
+      playwright:
+        patterns: ['@playwright/*', 'playwright*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'

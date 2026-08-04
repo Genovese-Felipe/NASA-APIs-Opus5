@@ -1,0 +1,50 @@
+name: Incorrect data
+description: A number, position, name or fact is wrong.
+labels: [data, bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the most valuable reports this project receives. A wrong
+        number is invisible — a planet in the wrong place still looks like a
+        planet — so someone noticing is often the only way it gets found.
+
+  - type: input
+    id: what
+    attributes:
+      label: What is wrong
+      placeholder: Titan's orbital period is shown as 15.9 days but should be …
+    validations:
+      required: true
+
+  - type: input
+    id: shown
+    attributes:
+      label: The value shown
+    validations:
+      required: true
+
+  - type: input
+    id: correct
+    attributes:
+      label: The correct value
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: >
+        A link to a primary source — a JPL table, an IAU report, a published
+        paper. Every number in this project is traceable to one, and a
+        correction needs to be too.
+      placeholder: https://ssd.jpl.nasa.gov/sats/elem/
+    validations:
+      required: true
+
+  - type: input
+    id: date
+    attributes:
+      label: Simulated date
+      description: For a position, the date shown in the clock at the time.

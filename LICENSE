@@ -19,3 +19,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+NOTE ON DATA AND IMAGERY
+
+The MIT licence above covers the source code in this repository only.
+
+Scientific data and imagery are retrieved at runtime from NASA and JPL
+services. NASA content is generally not copyrighted and may be used for
+educational or informational purposes without requesting permission, subject
+to NASA's media usage guidelines. See DATA-AND-CREDITS.md for the full list of
+sources, their terms, and required attribution.
+
+This project is not endorsed by, affiliated with, or sponsored by NASA or JPL.
+The NASA insignia, logotype, and seal are protected marks and are NOT used in
+this project.

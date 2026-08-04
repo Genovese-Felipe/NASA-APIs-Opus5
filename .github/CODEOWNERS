@@ -1,0 +1,10 @@
+# Default owner for everything.
+*                       @Genovese-Felipe
+
+# Scientific data changes deserve extra scrutiny: a wrong number here is
+# invisible, because a planet in the wrong place still looks like a planet.
+/src/astro/             @Genovese-Felipe
+/tools/validate-data.mjs @Genovese-Felipe
+
+# Translations.
+/src/ui/locales/        @Genovese-Felipe

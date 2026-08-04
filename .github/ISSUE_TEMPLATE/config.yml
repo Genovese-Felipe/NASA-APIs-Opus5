@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The documentation
+    url: https://github.com/Genovese-Felipe/NASA-APIs-Opus5/tree/main/docs
+    about: Architecture, the science and its limits, the NASA APIs, and a user guide.
+  - name: Data sources and credits
+    url: https://github.com/Genovese-Felipe/NASA-APIs-Opus5/blob/main/DATA-AND-CREDITS.md
+    about: Where every number and image comes from.
+  - name: NASA API status
+    url: https://api.nasa.gov/
+    about: If a panel says a service is unavailable, it is often NASA's end.

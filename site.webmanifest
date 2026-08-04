@@ -1,0 +1,13 @@
+{
+  "name": "ORRERY — NASA Solar System Explorer",
+  "short_name": "ORRERY",
+  "description": "A ray-traced tour of the solar system, built from NASA data.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "orientation": "any",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,60 @@
+name: Translation
+description: A string is wrong, awkward, untranslated, or does not fit.
+labels: [i18n]
+body:
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - 简体中文 (zh-Hans)
+        - Português (Brasil) (pt-BR)
+        - Español (es)
+        - 한국어 (ko)
+        - Français (fr)
+        - 日本語 (ja)
+        - Deutsch (de)
+        - Русский (ru)
+        - العربية (ar)
+        - English (en)
+        - A language we do not have yet
+    validations:
+      required: true
+
+  - type: input
+    id: key
+    attributes:
+      label: The key, if you know it
+      description: >
+        Keys look like `facts.distanceFromSun`. You can find them in
+        src/ui/locales/en.js. Not required.
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What it says now
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: What it should say
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem
+      options:
+        - Wrong meaning
+        - Awkward or unnatural
+        - Wrong register (too formal, too casual)
+        - Wrong technical term
+        - Too long for the space
+        - Not translated at all
+        - Wrong plural form
+        - Layout or direction problem
+    validations:
+      required: true

@@ -1,0 +1,60 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; queue rather than cancel, so a push during a
+# deployment does not leave the site half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Everything that would make the live site wrong runs before it ships.
+      - name: Lint
+        run: node tools/lint.mjs
+      - name: Validate locales
+        run: node tools/validate-locales.mjs
+      - name: Validate scientific data
+        run: node tools/validate-data.mjs
+      - name: Unit tests
+        run: node --test "tests/unit/**/*.test.js"
+
+      - name: Assemble the site
+        run: node tools/build-site.mjs --out _site
+
+      - name: Build the single-file artifact
+        run: node tools/build-artifact.mjs --out _site/standalone.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
