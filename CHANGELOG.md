@@ -65,7 +65,7 @@ The first release.
 ### Engineering
 
 - No build step, no runtime dependencies, no framework.
-- 194 unit tests and 38 browser tests, the latter with all external network
+- 195 unit tests and 38 browser tests, the latter with all external network
   access blocked.
 - A scientific data validator that checks numbers against physics.
 - A focused linter for the mistakes that break a deployed static site.

@@ -131,11 +131,11 @@ Two deliberate departures from physics, both documented in the interface and swi
 
 ```bash
 npm run check      # lint, locales, scientific data, unit tests
-npm test           # 194 unit tests
+npm test           # 195 unit tests
 npm run test:e2e   # 38 browser tests with real WebGL2
 ```
 
-- **194 unit tests** covering the Kepler solver against its own residual, orbital energy and angular momentum conservation, planet positions against JPL Horizons reference vectors, the PNG encoder against the reference CRC-32, the camera basis for orthonormality, and every locale for plural correctness.
+- **195 unit tests** covering the Kepler solver against its own residual, orbital energy and angular momentum conservation, planet positions against JPL Horizons reference vectors, the PNG encoder against the reference CRC-32, the camera basis for orthonormality, and every locale for plural correctness.
 - **38 end-to-end tests** in a real browser with real WebGL2 (ANGLE over SwiftShader, so no GPU needed): the shaders compile, the frame contains a lit planet, a 1080p export is a structurally valid PNG of exactly the right size, tiled rendering leaves no seam, all ten languages render with no untranslated keys, and every interactive control has an accessible name. **All external network access is blocked during the run** — the app is built to work from committed data, so an offline test is both valid and repeatable.
 - **A scientific data validator** that cross-checks every number against physics rather than against itself: density from mass and radius, orbital periods from Kepler's third law, every satellite inside its planet's Hill sphere and outside the Roche limit. It has already caught two real modelling errors — one of which correctly identified that Phobos orbits *inside* Mars's fluid Roche limit.
 - **A focused linter** for the mistakes that break a deployed static site: root-absolute paths, unresolvable imports, `innerHTML`, and any fetch host missing from the Content Security Policy.
