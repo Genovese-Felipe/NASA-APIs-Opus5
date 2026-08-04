@@ -32,6 +32,16 @@
       "label": "MESSENGER MDIS global basemap",
       "attribution": "NASA / JHUAPL / Carnegie — MESSENGER MDIS",
       "bytes": 554543
+    },
+    {
+      "id": "moon",
+      "file": "moon.jpg",
+      "width": 2048,
+      "height": 1024,
+      "level": 2,
+      "label": "Lunar Reconnaissance Orbiter WAC global mosaic",
+      "attribution": "NASA / GSFC / Arizona State University — LRO WAC",
+      "bytes": 745172
     }
   ]
 }
